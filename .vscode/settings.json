@@ -1,0 +1,7 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "./pipeline.sh": true,
+        "Rscript": true,
+        "./examples/run_example.sh": true
+    }
+}
