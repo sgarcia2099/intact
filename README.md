@@ -87,16 +87,16 @@ For each sample, the pipeline writes:
 
 The normalized table includes stable columns for:
 
-- `sample_id`
-- `source_file`
-- `neutral_mass`
-- `intensity`
-- `retention_time_min`
-- `charge`
-- `quality_score`
-- `trace_start_min`
-- `trace_end_min`
-- `flashdeconv_feature_id`
+- `sample_id`: sample label used by the pipeline for this row.
+- `source_file`: mzML file path that produced the deconvolved feature.
+- `neutral_mass`: deconvolved neutral monoisotopic mass (Da).
+- `intensity`: feature abundance reported by `FLASHDeconv`.
+- `retention_time_min`: representative retention time for the feature (minutes).
+- `charge`: representative charge state for the feature.
+- `quality_score`: deconvolution quality metric (for example `Score`/`Quality`), or `.` if unavailable.
+- `trace_start_min`: start retention time of the traced feature (minutes).
+- `trace_end_min`: end retention time of the traced feature (minutes).
+- `flashdeconv_feature_id`: feature identifier from `FLASHDeconv` output (or row fallback ID).
 
 ## Configuration
 
