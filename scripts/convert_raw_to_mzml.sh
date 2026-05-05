@@ -64,6 +64,8 @@ if [[ -f "${LOCAL_CONFIG_FILE}" ]]; then
   source "${LOCAL_CONFIG_FILE}"
 fi
 
+PWIZ_DOCKER_SECURITY_OPT=${PWIZ_DOCKER_SECURITY_OPT:-seccomp=unconfined}
+
 mkdir -p "$(dirname "${OUTPUT_FILE}")" "$(dirname "${LOG_FILE}")"
 
 input_dir=$(cd "$(dirname "${INPUT_FILE}")" && pwd)
@@ -94,7 +96,7 @@ if [[ -n "${MSCONVERT_EXTRA_FILTERS:-}" ]]; then
 fi
 
 security_opts=()
-if [[ -n "${PWIZ_DOCKER_SECURITY_OPT:-seccomp=unconfined}" ]]; then
+if [[ -n "${PWIZ_DOCKER_SECURITY_OPT}" ]]; then
   security_opts=(--security-opt "${PWIZ_DOCKER_SECURITY_OPT}")
 fi
 

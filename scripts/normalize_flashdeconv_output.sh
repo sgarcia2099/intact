@@ -55,6 +55,8 @@ done
 
 mkdir -p "$(dirname "${OUTPUT_FILE}")"
 
+# FLASHDeconv output columns can vary across versions and settings.
+# This mapper normalizes several known aliases into one stable schema.
 awk -F '\t' -v OFS='\t' -v sample_id="${SAMPLE_ID}" -v source_file="${SOURCE_FILE}" '
 BEGIN {
   print "sample_id", "source_file", "neutral_mass", "intensity", "retention_time_min", "charge", "quality_score", "trace_start_min", "trace_end_min", "flashdeconv_feature_id"
@@ -68,6 +70,7 @@ NR == 1 {
   next
 }
 NR > 1 {
+  # Prefer monoisotopic mass, then fall back to average/generic mass columns.
   mass = value(idx, "MonoisotopicMass")
   if (mass == "") mass = value(idx, "AverageMass")
   if (mass == "") mass = value(idx, "Mass")
@@ -106,3 +109,5 @@ function value(map, key,   pos) {
   return $pos
 }
 ' "${FEATURES_FILE}" >"${OUTPUT_FILE}"
+
+[[ -s "${OUTPUT_FILE}" ]] || fail "Normalization output is empty or missing: ${OUTPUT_FILE}"

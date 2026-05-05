@@ -17,6 +17,8 @@ if [[ -f "${LOCAL_CONFIG_FILE}" ]]; then
   source "${LOCAL_CONFIG_FILE}"
 fi
 
+FLASHDECONV_INI=${FLASHDECONV_INI:-"${ROOT_DIR}/config/flashdeconv.ini"}
+
 INPUT_PATH=""
 OUTPUT_DIR=""
 SAMPLE_NAME=""
@@ -25,6 +27,9 @@ RUN_FILTER=0
 DRY_RUN=0
 KEEP_INTERMEDIATE=${KEEP_INTERMEDIATE:-1}
 CONTINUE_ON_ERROR=${CONTINUE_ON_ERROR:-1}
+BATCH_TOTAL=0
+BATCH_FAILED=0
+BATCH_SUCCEEDED=0
 
 usage() {
   cat <<'EOF'
@@ -42,8 +47,8 @@ Options:
 
 Environment/config overrides:
   PWIZ_IMAGE, OPENMS_IMAGE, FLASHDECONV_INI, MSCONVERT_PEAK_PICKING,
-  FLASHDECONV_THREADS, MIN_MASS, MAX_MASS, MIN_CHARGE, MAX_CHARGE,
-  FILTER_PPM, FILTER_RT_MINUTES, FILTER_MIN_INTENSITY
+  FLASHDECONV_THREADS, FILTER_PPM, FILTER_RT_MINUTES, FILTER_MIN_INTENSITY,
+  KEEP_INTERMEDIATE, CONTINUE_ON_ERROR
 EOF
 }
 
@@ -218,33 +223,43 @@ process_sample() {
 process_batch() {
   local input_abs
   local status=0
-  local file_count=0
   local raw_file
   local sample_id
+
+  BATCH_TOTAL=0
+  BATCH_FAILED=0
+  BATCH_SUCCEEDED=0
 
   input_abs=$(abs_path "${INPUT_PATH}")
   require_dir "${input_abs}"
 
   while IFS= read -r -d '' raw_file; do
-    file_count=$((file_count + 1))
+    BATCH_TOTAL=$((BATCH_TOTAL + 1))
     sample_id=$(basename "${raw_file}")
     sample_id=${sample_id%.raw}
     sample_id=${sample_id%.RAW}
 
     if ! process_sample "${raw_file}" "${sample_id}"; then
       status=1
+      BATCH_FAILED=$((BATCH_FAILED + 1))
       log "Sample failed: ${sample_id}"
       if [[ ${CONTINUE_ON_ERROR} -ne 1 ]]; then
-        return ${status}
+        break
       fi
+    else
+      BATCH_SUCCEEDED=$((BATCH_SUCCEEDED + 1))
     fi
   done < <(find "${input_abs}" -maxdepth 1 \( -name '*.raw' -o -name '*.RAW' \) -print0 | sort -z)
 
-  [[ ${file_count} -gt 0 ]] || fail "No .raw files found in ${input_abs}"
+  [[ ${BATCH_TOTAL} -gt 0 ]] || fail "No .raw files found in ${input_abs}"
+
+  log "Batch summary: total=${BATCH_TOTAL}, succeeded=${BATCH_SUCCEEDED}, failed=${BATCH_FAILED}"
   return ${status}
 }
 
 main() {
+  local status=0
+
   parse_args "$@"
   prepare_dirs
   check_prereqs
@@ -258,7 +273,9 @@ main() {
   fi
 
   if [[ ${BATCH_MODE} -eq 1 ]]; then
-    process_batch
+    if ! process_batch; then
+      status=1
+    fi
   else
     require_file "${INPUT_PATH}"
     local sample_id
@@ -269,10 +286,17 @@ main() {
       sample_id=${sample_id%.raw}
       sample_id=${sample_id%.RAW}
     fi
-    process_sample "${INPUT_PATH}" "${sample_id}"
+    if ! process_sample "${INPUT_PATH}" "${sample_id}"; then
+      status=1
+    fi
   fi
 
-  log "Pipeline finished"
+  if [[ ${status} -eq 0 ]]; then
+    log "Pipeline finished successfully"
+  else
+    log "Pipeline finished with failures"
+    return 1
+  fi
 }
 
 main "$@"

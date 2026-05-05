@@ -50,6 +50,7 @@ opts <- parse_args(args)
 dir.create(dirname(opts$output), recursive = TRUE, showWarnings = FALSE)
 
 tab <- read.delim(opts$input, sep = "\t", header = TRUE, check.names = FALSE, stringsAsFactors = FALSE)
+input_rows <- nrow(tab)
 
 required_cols <- c("neutral_mass", "intensity", "retention_time_min")
 missing_cols <- setdiff(required_cols, names(tab))
@@ -63,8 +64,10 @@ tab$retention_time_min <- as.numeric(tab$retention_time_min)
 
 tab <- tab[!is.na(tab$neutral_mass) & !is.na(tab$intensity) & !is.na(tab$retention_time_min), , drop = FALSE]
 tab <- tab[tab$intensity >= opts$min_intensity, , drop = FALSE]
+post_prefilter_rows <- nrow(tab)
 
 if (nrow(tab) == 0) {
+  message(sprintf("Filtering summary: input=%d, prefilter_kept=0, dedup_kept=0", input_rows))
   write.table(tab, file = opts$output, sep = "\t", quote = FALSE, row.names = FALSE)
   quit(save = "no", status = 0)
 }
@@ -88,4 +91,10 @@ for (i in seq_len(nrow(tab))) {
 }
 
 filtered <- tab[keep, , drop = FALSE]
+message(sprintf(
+  "Filtering summary: input=%d, prefilter_kept=%d, dedup_kept=%d",
+  input_rows,
+  post_prefilter_rows,
+  nrow(filtered)
+))
 write.table(filtered, file = opts$output, sep = "\t", quote = FALSE, row.names = FALSE)

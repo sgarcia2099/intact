@@ -70,6 +70,8 @@ if [[ -f "${LOCAL_CONFIG_FILE}" ]]; then
   source "${LOCAL_CONFIG_FILE}"
 fi
 
+FLASHDECONV_INI=${FLASHDECONV_INI:-"${ROOT_DIR}/config/flashdeconv.ini"}
+
 [[ -f "${FLASHDECONV_INI}" ]] || fail "FLASHDeconv INI not found: ${FLASHDECONV_INI}"
 
 mkdir -p "$(dirname "${FEATURES_FILE}")" "$(dirname "${SPEC_MS1_FILE}")" "$(dirname "${LOG_FILE}")"

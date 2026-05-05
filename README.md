@@ -1,6 +1,6 @@
-# Intact DIA Neutral Mass Pipeline
+# Intact Neutral Mass Pipeline (DIA and DDA)
 
-This repository provides a bash-first, Docker-based workflow for intact protein DIA data that:
+This repository provides a bash-first, Docker-based workflow for intact protein mass spectrometry data (both DIA and DDA) that:
 
 1. Converts Thermo `.raw` files to centroided `.mzML` with ProteoWizard `msconvert`
 2. Performs MS1 deconvolution with OpenMS `FLASHDeconv`
@@ -8,6 +8,8 @@ This repository provides a bash-first, Docker-based workflow for intact protein 
 4. Optionally applies an R-based deduplication and denoising pass
 
 The primary entry point is [pipeline.sh](/home/jkg/github/intact/pipeline.sh).
+
+Because deconvolution is performed at MS1, this pipeline works regardless of whether the acquisition was DIA or DDA.
 
 ## Requirements
 
@@ -106,13 +108,16 @@ Defaults are read from [config/pipeline.env.example](/home/jkg/github/intact/con
 - `FLASHDECONV_INI`: path to the baseline `FLASHDeconv` INI file
 - `MSCONVERT_PEAK_PICKING`: `vendor` or `cwt`
 - `FLASHDECONV_THREADS`: thread count passed to `FLASHDeconv`
-- `MIN_MASS`, `MAX_MASS`, `MIN_CHARGE`, `MAX_CHARGE`: intact-protein defaults for MS1 deconvolution
 - `FILTER_*`: optional R filter thresholds
+- `KEEP_INTERMEDIATE`: set to `0` to remove `<sample>_spec_ms1.tsv` after normalization
+- `CONTINUE_ON_ERROR`: in batch mode, set to `0` to stop at first failed sample
+
+Note: FLASHDeconv algorithm settings (mass range, charge range, tolerance, SNR, trace length, and quant method) are controlled in `config/flashdeconv.ini`.
 
 You can also override most settings with environment variables at runtime:
 
 ```bash
-OPENMS_IMAGE=openms/executables:latest FLASHDECONV_THREADS=8 ./pipeline.sh ...
+OPENMS_IMAGE=ghcr.io/openms/openms-executables:latest FLASHDECONV_THREADS=8 ./pipeline.sh ...
 ```
 
 ## Validation
@@ -129,8 +134,8 @@ Container smoke tests once Docker is available locally:
 
 ```bash
 docker run --rm --security-opt seccomp=unconfined proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses:latest wine msconvert --help
-docker run --rm openms/executables:latest FLASHDeconv --help
-docker run --rm -v "$PWD/config:/config" openms/executables:latest FLASHDeconv -write_ini /config/generated.ini
+docker run --rm ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDeconv --help
+docker run --rm -v "$PWD/config:/config" ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDeconv -write_ini /config/generated.ini
 ```
 
 ## Notes on tuning
