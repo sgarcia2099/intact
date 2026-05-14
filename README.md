@@ -38,6 +38,7 @@ RAW conversion in Linux containers may still depend on vendor-reader compatibili
 - [scripts/filter_neutral_masses.R](scripts/filter_neutral_masses.R): optional filtering and deduplication
 - [scripts/calc_protein_mass.sh](scripts/calc_protein_mass.sh): FASTA to protein-mass table
 - [scripts/match_top_features_to_proteins.sh](scripts/match_top_features_to_proteins.sh): top-feature to protein-candidate matching
+- [scripts/run_batch_with_mass_mapping.sh](scripts/run_batch_with_mass_mapping.sh): batch raw processing plus protein mass prediction and feature mapping
 - [examples/run_example.sh](examples/run_example.sh): example invocations
 
 ## Pipeline Flow
@@ -209,6 +210,8 @@ Example stricter run:
 - `feature_neutral_mass_Da`: observed deconvolved neutral mass in Da.
 - `feature_intensity`: observed feature intensity from normalized table.
 - `feature_retention_time_min`: observed feature retention time in minutes.
+- `feature_quality_score`: associated FLASHDeconv quality score copied from the feature row.
+- `feature_isotope_cosine`: associated FLASHDeconv isotope-envelope cosine copied from the feature row.
 - `ptm_delta_Da`: PTM hypothesis delta mass in Da applied during matching.
 - `ptm_label`: label for the PTM hypothesis (`unmodified`, `carbamidomethyl`, `acetyl`, `phospho`, or generic delta label).
 - `candidate_rank`: rank of candidate protein for that feature (1 = best mass match).
@@ -219,6 +222,24 @@ Example stricter run:
 - `mass_error_Da`: signed mass error in Da between hypothesis and observed feature mass.
 - `mass_error_ppm`: signed mass error in ppm.
 - `nonCanon`: copied non-canonical residue annotation from protein mass table.
+
+### 3) One-command batch processing to mass mapping
+
+To process multiple RAW files and immediately continue into protein mass prediction and feature mapping:
+
+```bash
+./scripts/run_batch_with_mass_mapping.sh \
+  --input /data/raw \
+  --output /data/results \
+  --protein-fasta /data/proteins.fasta \
+  --filter
+```
+
+This command runs:
+
+1. Batch deconvolution pipeline over all `.raw` files in `--input`
+2. Protein mass table generation to `tables/protein_masses.tsv`
+3. Feature-to-protein matching for each sample table to `tables/<sample>_protein_matches.tsv`
 
 ## Configuration Notes
 
