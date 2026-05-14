@@ -86,15 +86,17 @@ NR > 1 {
   charge = value(idx, "MinCharge")
   if (charge == "") charge = value(idx, "Charge")
 
-  # QScore is the primary FLASHDeconv deconvolution quality score.
-  # IsotopeCosine / PerIsotopeCosine is the isotope envelope fit score (0-1).
-  # Fall back to legacy aliases for older OpenMS builds.
-  score = value(idx, "QScore")
+  # Qscore2D is the primary FLASHDeconv deconvolution quality score (current builds).
+  # IsotopeCosineScore is the isotope envelope fit score (0-1, current builds).
+  # Fall back to aliases from older OpenMS builds.
+  score = value(idx, "Qscore2D")
+  if (score == "") score = value(idx, "QScore")
   if (score == "") score = value(idx, "Score")
   if (score == "") score = value(idx, "Quality")
   if (score == "") score = "."
 
-  iso_cos = value(idx, "IsotopeCosine")
+  iso_cos = value(idx, "IsotopeCosineScore")
+  if (iso_cos == "") iso_cos = value(idx, "IsotopeCosine")
   if (iso_cos == "") iso_cos = value(idx, "PerIsotopeCosine")
   if (iso_cos == "") iso_cos = "."
 

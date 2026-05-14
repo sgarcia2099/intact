@@ -3,5 +3,6 @@
         "./pipeline.sh": true,
         "Rscript": true,
         "./examples/run_example.sh": true
-    }
+    },
+    "nextflow.telemetry.enabled": false
 }

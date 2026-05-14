@@ -1,140 +1,239 @@
 # Intact Neutral Mass Pipeline (DIA and DDA)
 
-This repository provides a bash-first, Docker-based workflow for intact protein mass spectrometry data (both DIA and DDA) that:
+This repository is a bash-first, Docker-based workflow for intact protein MS1 deconvolution and downstream mass annotation.
 
-1. Converts Thermo `.raw` files to centroided `.mzML` with ProteoWizard `msconvert`
-2. Performs MS1 deconvolution with OpenMS `FLASHDeconv`
-3. Normalizes the deconvolution output into a clean tabular list of neutral masses, intensity, and retention time
-4. Optionally applies an R-based deduplication and denoising pass
+## What The Repo Does Today
 
-The primary entry point is [pipeline.sh](/home/jkg/github/intact/pipeline.sh).
+The current implementation supports:
 
-Because deconvolution is performed at MS1, this pipeline works regardless of whether the acquisition was DIA or DDA.
+1. Thermo RAW to centroided mzML conversion with ProteoWizard msconvert
+2. MS1 deconvolution with OpenMS FLASHDeconv
+3. Stable normalization of FLASHDeconv feature output into a tabular neutral-mass table
+4. Optional R-based filtering (mass/RT deduplication, intensity threshold, and QScore threshold)
+5. Optional post-processing to map top features to candidate proteins from a FASTA-derived mass table
+
+Primary entry point: [pipeline.sh](pipeline.sh)
+
+Because deconvolution is MS1-based, the workflow applies to both DIA and DDA acquisitions.
 
 ## Requirements
 
-- Linux with Docker installed and usable by the current user
-- Thermo `.raw` input files
-- Optional: `Rscript` on the host if you want the downstream filtering step
+- Linux
+- Docker available to the current user
+- Thermo .raw input files (or pre-converted mzML)
+- Optional: Rscript on host for the filter stage
 
-## Important limitation
+## Important Limitation
 
-The orchestration code in this repository is open-source, but Thermo RAW conversion through ProteoWizard in Linux containers may still depend on vendor reader components. That limitation is not hidden by this workflow. If Thermo RAW reading fails on your host, the fallback is to pre-convert to centroided `.mzML` externally and run the OpenMS and downstream stages from that point.
+RAW conversion in Linux containers may still depend on vendor-reader compatibility from ProteoWizard. If Thermo RAW reading fails in your environment, pre-convert to centroided mzML outside this pipeline and start from FLASHDeconv.
 
-## Repository layout
+## Repository Layout
 
-- [pipeline.sh](/home/jkg/github/intact/pipeline.sh): single entry point for single-file and batch processing
-- [config/pipeline.env.example](/home/jkg/github/intact/config/pipeline.env.example): editable defaults for images and processing parameters
-- [config/flashdeconv.ini](/home/jkg/github/intact/config/flashdeconv.ini): baseline OpenMS parameter file for intact-protein deconvolution
-- [scripts/convert_raw_to_mzml.sh](/home/jkg/github/intact/scripts/convert_raw_to_mzml.sh): Docker wrapper for ProteoWizard `msconvert`
-- [scripts/run_flashdeconv.sh](/home/jkg/github/intact/scripts/run_flashdeconv.sh): Docker wrapper for OpenMS `FLASHDeconv`
-- [scripts/normalize_flashdeconv_output.sh](/home/jkg/github/intact/scripts/normalize_flashdeconv_output.sh): stable final table generation
-- [scripts/filter_neutral_masses.R](/home/jkg/github/intact/scripts/filter_neutral_masses.R): optional R-based filtering
-- [examples/run_example.sh](/home/jkg/github/intact/examples/run_example.sh): example invocation
+- [pipeline.sh](pipeline.sh): orchestrates single-file or batch processing
+- [config/pipeline.env.example](config/pipeline.env.example): environment defaults
+- [config/flashdeconv.ini](config/flashdeconv.ini): baseline FLASHDeconv parameters
+- [scripts/convert_raw_to_mzml.sh](scripts/convert_raw_to_mzml.sh): Docker wrapper for msconvert
+- [scripts/run_flashdeconv.sh](scripts/run_flashdeconv.sh): Docker wrapper for FLASHDeconv
+- [scripts/normalize_flashdeconv_output.sh](scripts/normalize_flashdeconv_output.sh): feature-table normalization
+- [scripts/filter_neutral_masses.R](scripts/filter_neutral_masses.R): optional filtering and deduplication
+- [scripts/calc_protein_mass.sh](scripts/calc_protein_mass.sh): FASTA to protein-mass table
+- [scripts/match_top_features_to_proteins.sh](scripts/match_top_features_to_proteins.sh): top-feature to protein-candidate matching
+- [examples/run_example.sh](examples/run_example.sh): example invocations
 
-## Quick start
+## Pipeline Flow
 
-Copy the example config if you want to override defaults:
+Raw or mzML input goes through these stages:
+
+1. Convert RAW to mzML (if RAW input provided)
+2. Run FLASHDeconv and collect feature table
+3. Normalize output columns into a stable schema
+4. Optionally filter normalized table with R
+
+Optional downstream analysis:
+
+5. Compute protein mass table from FASTA
+6. Match top deconvolved features to protein candidates with fixed PTM-delta hypotheses
+
+## Quick Start
+
+Copy local config override:
 
 ```bash
 cp config/pipeline.env.example config/pipeline.env
 ```
 
-Single file:
+Single sample:
 
 ```bash
 ./pipeline.sh \
-	--input /data/run01.raw \
-	--output /data/results \
-	--sample run01
+  --input /data/run01.raw \
+  --output /data/results \
+  --sample run01
 ```
 
-Batch mode over a directory of `.raw` files:
+Batch mode:
 
 ```bash
 ./pipeline.sh \
-	--input /data/raw \
-	--output /data/results \
-	--batch
+  --input /data/raw \
+  --output /data/results \
+  --batch
 ```
 
-Use the optional R filter stage:
+Batch with filtering:
 
 ```bash
 ./pipeline.sh \
-	--input /data/raw \
-	--output /data/results \
-	--batch \
-	--filter
+  --input /data/raw \
+  --output /data/results \
+  --batch \
+  --filter
 ```
 
-Dry run the exact container commands without executing them:
+Dry run:
 
 ```bash
 ./pipeline.sh --input /data/run01.raw --output /data/results --sample run01 --dry-run
 ```
 
-## Final outputs
+## Outputs
 
-For each sample, the pipeline writes:
+Per sample output directories:
 
-- `mzml/<sample>.mzML`: centroided mzML from `msconvert`
-- `flashdeconv/<sample>_features.tsv`: raw `FLASHDeconv` feature output
-- `flashdeconv/<sample>_spec_ms1.tsv`: optional deconvolved MS1 spectrum output
-- `tables/<sample>_neutral_masses.tsv`: normalized final table
-- `tables/<sample>_neutral_masses.filtered.tsv`: optional R-filtered table
-- `logs/<sample>/*.log`: per-stage logs
+- mzml/<sample>.mzML
+- flashdeconv/<sample>_features.tsv
+- flashdeconv/<sample>_spec_ms1.tsv (optional intermediate)
+- tables/<sample>_neutral_masses.tsv
+- tables/<sample>_neutral_masses.filtered.tsv (if --filter)
+- logs/<sample>/*.log
 
-Optional post-processing output:
+Optional downstream output:
 
-- `tables/<sample>_protein_matches.tsv`: top-feature to candidate-protein mass matches from `match_top_features_to_proteins.sh`
+- tables/<sample>_protein_matches.tsv
 
-The normalized table includes stable columns for:
+### Normalized Table Schema
 
-- `sample_id`: sample label used by the pipeline for this row.
-- `source_file`: mzML file path that produced the deconvolved feature.
-- `neutral_mass`: deconvolved neutral monoisotopic mass (Da).
-- `intensity`: feature abundance reported by `FLASHDeconv`.
-- `retention_time_min`: representative retention time for the feature (minutes).
-- `charge`: representative charge state for the feature.
-- `quality_score`: deconvolution quality metric (for example `Score`/`Quality`), or `.` if unavailable.
-- `trace_start_min`: start retention time of the traced feature (minutes).
-- `trace_end_min`: end retention time of the traced feature (minutes).
-- `flashdeconv_feature_id`: feature identifier from `FLASHDeconv` output (or row fallback ID).
+The normalized table currently exports:
 
-## Configuration
+- sample_id
+- source_file
+- neutral_mass
+- intensity
+- retention_time_min
+- charge
+- quality_score
+- isotope_cosine
+- trace_start_min
+- trace_end_min
+- flashdeconv_feature_id
 
-Defaults are read from [config/pipeline.env.example](/home/jkg/github/intact/config/pipeline.env.example) unless a local `config/pipeline.env` file exists. The most important values are:
+Quality mapping details from FLASHDeconv features table:
 
-- `PWIZ_IMAGE`: ProteoWizard container image
-- `PWIZ_DOCKER_SECURITY_OPT`: Docker security option for Wine-based ProteoWizard runs; default is `seccomp=unconfined` because some Docker hosts fail with `wine: socket : Function not implemented` under the default seccomp profile
-- `OPENMS_IMAGE`: OpenMS container image
-- `FLASHDECONV_INI`: path to the baseline `FLASHDeconv` INI file
-- `MSCONVERT_PEAK_PICKING`: `vendor` or `cwt`
-- `FLASHDECONV_THREADS`: thread count passed to `FLASHDeconv`
-- `FILTER_*`: optional R filter thresholds
-- `KEEP_INTERMEDIATE`: set to `0` to remove `<sample>_spec_ms1.tsv` after normalization
-- `CONTINUE_ON_ERROR`: in batch mode, set to `0` to stop at first failed sample
+- quality_score: Qscore2D (fallbacks: QScore, Score, Quality)
+- isotope_cosine: IsotopeCosineScore (fallbacks: IsotopeCosine, PerIsotopeCosine)
 
-Note: FLASHDeconv algorithm settings (mass range, charge range, tolerance, SNR, trace length, and quant method) are controlled in `config/flashdeconv.ini`.
+## Filtering Stage (R)
 
-You can also override most settings with environment variables at runtime:
+Script: [scripts/filter_neutral_masses.R](scripts/filter_neutral_masses.R)
+
+Current filtering logic:
+
+1. Remove rows with missing mass/intensity/RT
+2. Apply min intensity threshold
+3. Optionally apply minimum quality score threshold (--min-qscore)
+4. Deduplicate rows in mass and RT windows by keeping highest-intensity representative
+
+Defaults (from [config/pipeline.env.example](config/pipeline.env.example)):
+
+- FILTER_PPM=10
+- FILTER_RT_MINUTES=0.5
+- FILTER_MIN_INTENSITY=0
+- FILTER_MIN_QSCORE=0
+
+Recommended quality threshold guidance:
+
+- FLASHDeconv-style minimum quality acceptance: QScore greater than 0
+- More conservative filtering for high-confidence candidates: min-qscore >= 0.5
+
+## Protein Matching Stage
+
+### 1) Build protein masses from FASTA
 
 ```bash
-OPENMS_IMAGE=ghcr.io/openms/openms-executables:latest FLASHDECONV_THREADS=8 ./pipeline.sh ...
+./scripts/calc_protein_mass.sh /data/proteins.fasta > /data/results/tables/protein_masses.tsv
 ```
+
+Output columns:
+
+- entry_id
+- description
+- length
+- avg_mass_Da
+- mono_mass_Da
+- nonCanon
+
+### 2) Match top features to candidates
+
+```bash
+./scripts/match_top_features_to_proteins.sh \
+  --features /data/results/tables/run01_neutral_masses.tsv \
+  --protein-masses /data/results/tables/protein_masses.tsv \
+  --output /data/results/tables/run01_protein_matches.tsv
+```
+
+Current matcher defaults:
+
+- top features: 10
+- max candidates per feature: 5
+- tolerance: 10 ppm
+- PTM deltas (Da): 0,57.0215,42.0106,79.9663
+
+Example stricter run:
+
+```bash
+./scripts/match_top_features_to_proteins.sh \
+  --features /data/results/tables/run01_neutral_masses.filtered.tsv \
+  --protein-masses /data/results/tables/protein_masses.tsv \
+  --output /data/results/tables/run01_protein_matches.tsv \
+  --ppm 5 \
+  --min-intensity 100000
+```
+
+## Configuration Notes
+
+Key controls in [config/pipeline.env.example](config/pipeline.env.example):
+
+- PWIZ_IMAGE
+- PWIZ_DOCKER_SECURITY_OPT
+- OPENMS_IMAGE
+- FLASHDECONV_INI
+- FLASHDECONV_THREADS
+- MSCONVERT_PEAK_PICKING
+- FILTER_PPM
+- FILTER_RT_MINUTES
+- FILTER_MIN_INTENSITY
+- FILTER_MIN_QSCORE
+- KEEP_INTERMEDIATE
+- CONTINUE_ON_ERROR
+
+Algorithmic deconvolution constraints remain in [config/flashdeconv.ini](config/flashdeconv.ini), including:
+
+- SD min_cos=0.85
+- SD min_snr=1.0
+- mass and charge ranges
 
 ## Validation
 
-Shell-level validation available from this repo:
+Basic checks:
 
 ```bash
-bash -n pipeline.sh scripts/convert_raw_to_mzml.sh scripts/run_flashdeconv.sh scripts/normalize_flashdeconv_output.sh
+bash -n pipeline.sh scripts/convert_raw_to_mzml.sh scripts/run_flashdeconv.sh scripts/normalize_flashdeconv_output.sh scripts/match_top_features_to_proteins.sh
+Rscript --vanilla -e 'parse("scripts/filter_neutral_masses.R")'
 ./pipeline.sh --help
 ./pipeline.sh --input /data/run01.raw --output /tmp/out --sample run01 --dry-run
 ```
 
-Container smoke tests once Docker is available locally:
+Container smoke tests:
 
 ```bash
 docker run --rm --security-opt seccomp=unconfined proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses:latest wine msconvert --help
@@ -142,178 +241,50 @@ docker run --rm ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDe
 docker run --rm -v "$PWD/config:/config" ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDeconv -write_ini /config/generated.ini
 ```
 
-## Matching Top Features To Candidate Proteins
+## Citations And Tool Links
 
-This repository includes a standalone post-processing script to map high-intensity deconvolved features to protein candidates by intact monoisotopic mass:
+### Workflow and Runtime Tools
 
-- Input A: `tables/<sample>_neutral_masses.tsv` (or `tables/<sample>_neutral_masses.filtered.tsv`)
-- Input B: protein masses table produced by `calc_protein_mass.sh`
-- Output: `tables/<sample>_protein_matches.tsv`
+1. Bash shell
+- GNU Bash manual: https://www.gnu.org/software/bash/
 
-Generate the protein mass table from FASTA:
+2. Docker
+- Docker product site: https://www.docker.com/
+- Docker Engine source (GitHub): https://github.com/moby/moby
 
-```bash
-./scripts/calc_protein_mass.sh /data/proteins.fasta > /data/results/tables/protein_masses.tsv
-```
+3. R
+- R project: https://www.r-project.org/
+- R source mirror (GitHub): https://github.com/wch/r-source
 
-Run top-feature matching:
+### Mass Spectrometry Processing Tools
 
-```bash
-./scripts/match_top_features_to_proteins.sh \
-	--features /data/results/tables/run01_neutral_masses.tsv \
-	--protein-masses /data/results/tables/protein_masses.tsv \
-	--output /data/results/tables/run01_protein_matches.tsv
-```
+4. ProteoWizard / msconvert
+- Project site: http://proteowizard.sourceforge.net/
+- Source (GitHub): https://github.com/ProteoWizard/pwiz
+- Citation: Chambers MC, Maclean B, Burke R, et al. A cross-platform toolkit for mass spectrometry and proteomics. Nat Biotechnol. 2012;30(10):918-920. https://doi.org/10.1038/nbt.2377
 
-Defaults:
+5. OpenMS
+- Project site: https://www.openms.de/
+- Source (GitHub): https://github.com/OpenMS/OpenMS
+- Citation: Rost HL, Sachsenberg T, Aiche S, et al. OpenMS: a flexible open-source software platform for mass spectrometry data analysis. Nat Methods. 2016;13(9):741-748. https://doi.org/10.1038/nmeth.3959
 
-- Top features selected by intensity: `10`
-- Max candidates retained per feature: `5`
-- Mass tolerance: `10 ppm`
-- PTM delta hypotheses (Da): `0,57.0215,42.0106,79.9663`
+6. FLASHDeconv (OpenMS TOPP tool)
+- OpenMS docs: https://openms.de/documentation/TOPP_FLASHDeconv.html
+- Source tree (GitHub): https://github.com/OpenMS/OpenMS
+- Citation: Jeong K, Kim M, et al. FLASHDeconv: ultrafast, high-quality feature deconvolution for top-down proteomics. Cell Syst. 2020;10(2):213-218.e6. https://doi.org/10.1016/j.cels.2020.01.003
 
-You can override these at runtime, for example:
+### Mass Constants and Reference Data Used In calc_protein_mass.sh
 
-```bash
-./scripts/match_top_features_to_proteins.sh \
-	--features /data/results/tables/run01_neutral_masses.filtered.tsv \
-	--protein-masses /data/results/tables/protein_masses.tsv \
-	--output /data/results/tables/run01_protein_matches.tsv \
-	--top-features 10 \
-	--top-proteins 5 \
-	--ppm 5 \
-	--ptm-deltas "0,57.0215,42.0106,79.9663" \
-	--min-intensity 100000
-```
+7. Unimod residue masses
+- Site: https://www.unimod.org/
+- Citation: Creasy DM, Cottrell JS. Unimod: protein modifications for mass spectrometry. Proteomics. 2004;4(6):1534-1536. https://doi.org/10.1002/pmic.200300744
 
-The output columns are:
+8. ExPASy ProtParam average masses
+- Site: https://web.expasy.org/protparam/
+- Citation: Gasteiger E, Hoogland C, Gattiker A, et al. Protein Identification and Analysis Tools on the ExPASy Server. In: The Proteomics Protocols Handbook. 2005:571-607. https://doi.org/10.1385/1-59259-890-0:571
 
-- `sample_id`
-- `flashdeconv_feature_id`
-- `feature_rank`
-- `feature_neutral_mass_Da`
-- `feature_intensity`
-- `feature_retention_time_min`
-- `ptm_delta_Da`
-- `ptm_label`
-- `candidate_rank`
-- `entry_id`
-- `description`
-- `length`
-- `protein_mono_mass_Da`
-- `mass_error_Da`
-- `mass_error_ppm`
-- `nonCanon`
+9. IUPAC standard atomic weights
+- Citation: Meija J, Coplen TB, Berglund M, et al. Atomic weights of the elements 2013. Pure Appl Chem. 2016;88(3):265-291. https://doi.org/10.1515/pac-2015-0305
 
-Notes:
-
-- Matching is monoisotopic (`neutral_mass` to `mono_mass_Da`).
-- PTM support in this script is fixed-delta hypothesis matching (fast and deterministic), not combinatorial site localization.
-- If fewer than 5 candidates are found for a feature, the script returns fewer rows for that feature.
-
-## Notes on tuning
-
-- The default `FLASHDeconv` mass and charge bounds are conservative starting points for intact proteins and may need adjustment for your instrument and sample complexity.
-- For direct infusion or very short traces, switch quantification logic in [config/flashdeconv.ini](/home/jkg/github/intact/config/flashdeconv.ini) from `area` to `median` or `max_height`.
-- Keep both raw and filtered tables. The filtered table is a convenience view, not a provenance-preserving replacement.
-
-# calc_protein_mass.sh — Reference Documentation
-
-## Usage
-
-```bash
-./calc_protein_mass.sh <protein.fasta>
-```
-
-Outputs a tab-separated table to stdout with columns:
-`entry_id`, `description`, `length`, `avg_mass_Da`, `mono_mass_Da`, `nonCanon`
-
-Redirect to a file as needed:
-```bash
-./calc_protein_mass.sh input.faa > output.tsv
-```
-
----
-
-## How Masses Are Calculated
-
-Protein mass is the sum of **residue masses** for each amino acid in the sequence, plus **one water molecule** (lost from the termini is added back):
-
-$$M_{\text{protein}} = \sum_{i=1}^{n} M_{\text{residue},i} + M_{\text{H}_2\text{O}}$$
-
-> **Residue mass** = full amino acid mass − H₂O (18 Da), because one water molecule is released at each peptide bond during condensation. A single water is added back to account for the free N- and C-termini.
-
----
-
-## Amino Acid Residue Masses
-
-All masses are in **Daltons (Da)**.  
-Residue formulas reflect the composition after water loss at the peptide bond.
-
-| Code | Name           | Residue Formula | Monoisotopic (Da) | Average (Da) |
-|------|----------------|-----------------|-------------------|--------------|
-| A    | Alanine        | C₃H₅NO          | 71.03711          | 71.0788      |
-| R    | Arginine       | C₆H₁₂N₄O        | 156.10111         | 156.1875     |
-| N    | Asparagine     | C₄H₆N₂O₂        | 114.04293         | 114.1038     |
-| D    | Aspartic acid  | C₄H₅NO₃         | 115.02694         | 115.0886     |
-| C    | Cysteine       | C₃H₅NOS         | 103.00919         | 103.1388     |
-| E    | Glutamic acid  | C₅H₇NO₃         | 129.04259         | 129.1155     |
-| Q    | Glutamine      | C₅H₈N₂O₂        | 128.05858         | 128.1307     |
-| G    | Glycine        | C₂H₃NO          | 57.02146          | 57.0519      |
-| H    | Histidine      | C₆H₇N₃O         | 137.05891         | 137.1411     |
-| I    | Isoleucine     | C₆H₁₁NO         | 113.08406         | 113.1594     |
-| L    | Leucine        | C₆H₁₁NO         | 113.08406         | 113.1594     |
-| K    | Lysine         | C₆H₁₂N₂O        | 128.09496         | 128.1741     |
-| M    | Methionine     | C₅H₉NOS         | 131.04049         | 131.1926     |
-| F    | Phenylalanine  | C₉H₉NO          | 147.06841         | 147.1766     |
-| P    | Proline        | C₅H₇NO          | 97.05276          | 97.1167      |
-| S    | Serine         | C₃H₅NO₂         | 87.03203          | 87.0782      |
-| T    | Threonine      | C₄H₇NO₂         | 101.04768         | 101.1051     |
-| W    | Tryptophan     | C₁₁H₁₀N₂O       | 186.07931         | 186.2132     |
-| Y    | Tyrosine       | C₉H₉NO₂         | 163.06333         | 163.1760     |
-| V    | Valine         | C₅H₉NO          | 99.06841          | 99.1326      |
-| —    | Water (+1×)    | H₂O             | 18.01056          | 18.01528     |
-
----
-
-## Atomic Composition of Residues
-
-The residue formulas above are composed of four elements:
-
-| Element  | Monoisotopic isotope | Monoisotopic mass (Da) | Standard atomic weight (Da) |
-|----------|----------------------|------------------------|-----------------------------|
-| Carbon   | ¹²C                  | 12.00000               | 12.0107                     |
-| Hydrogen | ¹H                   | 1.0078250              | 1.00794                     |
-| Nitrogen | ¹⁴N                  | 14.0030740             | 14.0067                     |
-| Oxygen   | ¹⁶O                  | 15.9949146             | 15.9994                     |
-| Sulfur   | ³²S                  | 31.9720707             | 32.065                      |
-
-- **Monoisotopic mass**: calculated using the mass of the most abundant (lightest) isotope of each element.
-- **Average mass**: calculated using the standard atomic weight of each element (weighted average over all naturally occurring isotopes).
-
----
-
-## Non-Canonical Amino Acids
-
-Residues not in the 20 canonical amino acids (e.g. `B`, `Z`, `X`, `U`, `O`, `J`) are:
-- **Excluded** from mass calculation and sequence length count
-- **Recorded** in the `nonCanon` output column as `<residue><1-based position>` pairs, e.g. `U56; B89`
-- **Reported** as a warning to stderr
-
----
-
-## Citations
-
-1. **Monoisotopic residue masses** — Unimod: The Unimod database for protein modifications.  
-   https://www.unimod.org  
-   Creasy DM, Cottrell JS. "Unimod: Protein modifications for mass spectrometry." *Proteomics* 4(6):1534–6 (2004). https://doi.org/10.1002/pmic.200300744
-
-2. **Average residue masses** — ExPASy ProtParam tool.  
-   https://web.expasy.org/protparam/  
-   Gasteiger E, Hoogland C, Gattiker A, Duvaud S, Wilkins MR, Appel RD, Bairoch A. "Protein Identification and Analysis Tools on the ExPASy Server." In: Walker JM (ed.), *The Proteomics Protocols Handbook*, Humana Press, pp. 571–607 (2005). https://doi.org/10.1385/1-59259-890-0:571
-
-3. **Standard atomic weights** — IUPAC Commission on Isotopic Abundances and Atomic Weights.  
-   Meija J, Coplen TB, Berglund M, et al. "Atomic weights of the elements 2013." *Pure Appl. Chem.* 88(3):265–291 (2016). https://doi.org/10.1515/pac-2015-0305
-
-4. **Monoisotopic atomic masses** — NIST Atomic Weights and Isotopic Compositions.  
-   https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
+10. NIST monoisotopic atomic masses
+- Site: https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
