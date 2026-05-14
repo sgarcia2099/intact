@@ -143,3 +143,104 @@ docker run --rm -v "$PWD/config:/config" ghcr.io/openms/openms-executables:lates
 - The default `FLASHDeconv` mass and charge bounds are conservative starting points for intact proteins and may need adjustment for your instrument and sample complexity.
 - For direct infusion or very short traces, switch quantification logic in [config/flashdeconv.ini](/home/jkg/github/intact/config/flashdeconv.ini) from `area` to `median` or `max_height`.
 - Keep both raw and filtered tables. The filtered table is a convenience view, not a provenance-preserving replacement.
+
+# calc_protein_mass.sh — Reference Documentation
+
+## Usage
+
+```bash
+./calc_protein_mass.sh <protein.fasta>
+```
+
+Outputs a tab-separated table to stdout with columns:
+`entry_id`, `description`, `length`, `avg_mass_Da`, `mono_mass_Da`, `nonCanon`
+
+Redirect to a file as needed:
+```bash
+./calc_protein_mass.sh input.faa > output.tsv
+```
+
+---
+
+## How Masses Are Calculated
+
+Protein mass is the sum of **residue masses** for each amino acid in the sequence, plus **one water molecule** (lost from the termini is added back):
+
+$$M_{\text{protein}} = \sum_{i=1}^{n} M_{\text{residue},i} + M_{\text{H}_2\text{O}}$$
+
+> **Residue mass** = full amino acid mass − H₂O (18 Da), because one water molecule is released at each peptide bond during condensation. A single water is added back to account for the free N- and C-termini.
+
+---
+
+## Amino Acid Residue Masses
+
+All masses are in **Daltons (Da)**.  
+Residue formulas reflect the composition after water loss at the peptide bond.
+
+| Code | Name           | Residue Formula | Monoisotopic (Da) | Average (Da) |
+|------|----------------|-----------------|-------------------|--------------|
+| A    | Alanine        | C₃H₅NO          | 71.03711          | 71.0788      |
+| R    | Arginine       | C₆H₁₂N₄O        | 156.10111         | 156.1875     |
+| N    | Asparagine     | C₄H₆N₂O₂        | 114.04293         | 114.1038     |
+| D    | Aspartic acid  | C₄H₅NO₃         | 115.02694         | 115.0886     |
+| C    | Cysteine       | C₃H₅NOS         | 103.00919         | 103.1388     |
+| E    | Glutamic acid  | C₅H₇NO₃         | 129.04259         | 129.1155     |
+| Q    | Glutamine      | C₅H₈N₂O₂        | 128.05858         | 128.1307     |
+| G    | Glycine        | C₂H₃NO          | 57.02146          | 57.0519      |
+| H    | Histidine      | C₆H₇N₃O         | 137.05891         | 137.1411     |
+| I    | Isoleucine     | C₆H₁₁NO         | 113.08406         | 113.1594     |
+| L    | Leucine        | C₆H₁₁NO         | 113.08406         | 113.1594     |
+| K    | Lysine         | C₆H₁₂N₂O        | 128.09496         | 128.1741     |
+| M    | Methionine     | C₅H₉NOS         | 131.04049         | 131.1926     |
+| F    | Phenylalanine  | C₉H₉NO          | 147.06841         | 147.1766     |
+| P    | Proline        | C₅H₇NO          | 97.05276          | 97.1167      |
+| S    | Serine         | C₃H₅NO₂         | 87.03203          | 87.0782      |
+| T    | Threonine      | C₄H₇NO₂         | 101.04768         | 101.1051     |
+| W    | Tryptophan     | C₁₁H₁₀N₂O       | 186.07931         | 186.2132     |
+| Y    | Tyrosine       | C₉H₉NO₂         | 163.06333         | 163.1760     |
+| V    | Valine         | C₅H₉NO          | 99.06841          | 99.1326      |
+| —    | Water (+1×)    | H₂O             | 18.01056          | 18.01528     |
+
+---
+
+## Atomic Composition of Residues
+
+The residue formulas above are composed of four elements:
+
+| Element  | Monoisotopic isotope | Monoisotopic mass (Da) | Standard atomic weight (Da) |
+|----------|----------------------|------------------------|-----------------------------|
+| Carbon   | ¹²C                  | 12.00000               | 12.0107                     |
+| Hydrogen | ¹H                   | 1.0078250              | 1.00794                     |
+| Nitrogen | ¹⁴N                  | 14.0030740             | 14.0067                     |
+| Oxygen   | ¹⁶O                  | 15.9949146             | 15.9994                     |
+| Sulfur   | ³²S                  | 31.9720707             | 32.065                      |
+
+- **Monoisotopic mass**: calculated using the mass of the most abundant (lightest) isotope of each element.
+- **Average mass**: calculated using the standard atomic weight of each element (weighted average over all naturally occurring isotopes).
+
+---
+
+## Non-Canonical Amino Acids
+
+Residues not in the 20 canonical amino acids (e.g. `B`, `Z`, `X`, `U`, `O`, `J`) are:
+- **Excluded** from mass calculation and sequence length count
+- **Recorded** in the `nonCanon` output column as `<residue><1-based position>` pairs, e.g. `U56; B89`
+- **Reported** as a warning to stderr
+
+---
+
+## Citations
+
+1. **Monoisotopic residue masses** — Unimod: The Unimod database for protein modifications.  
+   https://www.unimod.org  
+   Creasy DM, Cottrell JS. "Unimod: Protein modifications for mass spectrometry." *Proteomics* 4(6):1534–6 (2004). https://doi.org/10.1002/pmic.200300744
+
+2. **Average residue masses** — ExPASy ProtParam tool.  
+   https://web.expasy.org/protparam/  
+   Gasteiger E, Hoogland C, Gattiker A, Duvaud S, Wilkins MR, Appel RD, Bairoch A. "Protein Identification and Analysis Tools on the ExPASy Server." In: Walker JM (ed.), *The Proteomics Protocols Handbook*, Humana Press, pp. 571–607 (2005). https://doi.org/10.1385/1-59259-890-0:571
+
+3. **Standard atomic weights** — IUPAC Commission on Isotopic Abundances and Atomic Weights.  
+   Meija J, Coplen TB, Berglund M, et al. "Atomic weights of the elements 2013." *Pure Appl. Chem.* 88(3):265–291 (2016). https://doi.org/10.1515/pac-2015-0305
+
+4. **Monoisotopic atomic masses** — NIST Atomic Weights and Isotopic Compositions.  
+   https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
