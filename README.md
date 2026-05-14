@@ -2,7 +2,7 @@
 
 This repository is a bash-first, Docker-based workflow for intact protein MS1 deconvolution and downstream mass annotation.
 
-## What The Repo Does Today
+## Overview
 
 The current implementation supports:
 
@@ -243,48 +243,35 @@ docker run --rm -v "$PWD/config:/config" ghcr.io/openms/openms-executables:lates
 
 ## Citations And Tool Links
 
-### Workflow and Runtime Tools
-
-1. Bash shell
-- GNU Bash manual: https://www.gnu.org/software/bash/
-
-2. Docker
-- Docker product site: https://www.docker.com/
-- Docker Engine source (GitHub): https://github.com/moby/moby
-
-3. R
-- R project: https://www.r-project.org/
-- R source mirror (GitHub): https://github.com/wch/r-source
-
 ### Mass Spectrometry Processing Tools
 
-4. ProteoWizard / msconvert
+1. ProteoWizard / msconvert
 - Project site: http://proteowizard.sourceforge.net/
 - Source (GitHub): https://github.com/ProteoWizard/pwiz
 - Citation: Chambers MC, Maclean B, Burke R, et al. A cross-platform toolkit for mass spectrometry and proteomics. Nat Biotechnol. 2012;30(10):918-920. https://doi.org/10.1038/nbt.2377
 
-5. OpenMS
+2. OpenMS
 - Project site: https://www.openms.de/
 - Source (GitHub): https://github.com/OpenMS/OpenMS
 - Citation: Rost HL, Sachsenberg T, Aiche S, et al. OpenMS: a flexible open-source software platform for mass spectrometry data analysis. Nat Methods. 2016;13(9):741-748. https://doi.org/10.1038/nmeth.3959
 
-6. FLASHDeconv (OpenMS TOPP tool)
+3. FLASHDeconv (OpenMS TOPP tool)
 - OpenMS docs: https://openms.de/documentation/TOPP_FLASHDeconv.html
 - Source tree (GitHub): https://github.com/OpenMS/OpenMS
 - Citation: Jeong K, Kim M, et al. FLASHDeconv: ultrafast, high-quality feature deconvolution for top-down proteomics. Cell Syst. 2020;10(2):213-218.e6. https://doi.org/10.1016/j.cels.2020.01.003
 
 ### Mass Constants and Reference Data Used In calc_protein_mass.sh
 
-7. Unimod residue masses
+4. Unimod residue masses
 - Site: https://www.unimod.org/
 - Citation: Creasy DM, Cottrell JS. Unimod: protein modifications for mass spectrometry. Proteomics. 2004;4(6):1534-1536. https://doi.org/10.1002/pmic.200300744
 
-8. ExPASy ProtParam average masses
+5. ExPASy ProtParam average masses
 - Site: https://web.expasy.org/protparam/
 - Citation: Gasteiger E, Hoogland C, Gattiker A, et al. Protein Identification and Analysis Tools on the ExPASy Server. In: The Proteomics Protocols Handbook. 2005:571-607. https://doi.org/10.1385/1-59259-890-0:571
 
-9. IUPAC standard atomic weights
+6. IUPAC standard atomic weights
 - Citation: Meija J, Coplen TB, Berglund M, et al. Atomic weights of the elements 2013. Pure Appl Chem. 2016;88(3):265-291. https://doi.org/10.1515/pac-2015-0305
 
-10. NIST monoisotopic atomic masses
+7. NIST monoisotopic atomic masses
 - Site: https://www.nist.gov/pml/atomic-weights-and-isotopic-compositions-relative-atomic-masses
