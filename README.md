@@ -173,6 +173,9 @@ Output columns:
 - `length`: count of canonical amino acid residues used in mass calculation.
 - `avg_mass_Da`: calculated average intact-protein mass in Da (includes one terminal water).
 - `mono_mass_Da`: calculated monoisotopic intact-protein mass in Da (includes one terminal water).
+- `mono_mass_no_init_met_Da`: optional mature-form hypothesis where initiator methionine is removed.
+- `mono_mass_no_init_met_nterm_acetyl_Da`: optional mature-form hypothesis with initiator methionine removed and N-terminus acetylated.
+- `mono_mass_no_init_met_minus_h2o_Da`: optional mature-form hypothesis with initiator methionine removed and net dehydration.
 - `nonCanon`: semicolon-delimited non-canonical residues and 1-based positions excluded from mass calculation (empty if none).
 
 ### 2) Match top features to candidates
@@ -219,6 +222,7 @@ Example stricter run:
 - `description`: matched protein description from FASTA header.
 - `length`: matched protein canonical residue length.
 - `protein_mono_mass_Da`: matched protein monoisotopic mass in Da (unmodified baseline mass).
+- `protein_mass_source`: which protein mass hypothesis matched (`full_length`, `no_init_met`, `no_init_met_nterm_acetyl`, `no_init_met_minus_h2o`).
 - `mass_error_Da`: signed mass error in Da between hypothesis and observed feature mass.
 - `mass_error_ppm`: signed mass error in ppm.
 - `nonCanon`: copied non-canonical residue annotation from protein mass table.

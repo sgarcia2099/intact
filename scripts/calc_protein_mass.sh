@@ -4,7 +4,9 @@
 # See calc_protein_mass_README.md for mass tables and citations.
 #
 # Usage:  ./calc_protein_mass.sh <protein.fasta>
-# Output: TSV to stdout — entry_id, description, length, avg_mass_Da, mono_mass_Da, nonCanon
+# Output: TSV to stdout — entry_id, description, length, avg_mass_Da, mono_mass_Da,
+#         mono_mass_no_init_met_Da, mono_mass_no_init_met_nterm_acetyl_Da,
+#         mono_mass_no_init_met_minus_h2o_Da, nonCanon
 
 set -euo pipefail
 
@@ -46,6 +48,7 @@ BEGIN {
     mono["Y"] = 163.06333
     mono["V"] = 99.06841
     WATER_MONO = 18.01056
+    ACETYL_MONO = 42.01056
 
     # ── Average residue masses (Da) ─────────────────────────────────────────
     # Source: ExPASy ProtParam (https://web.expasy.org/protparam/)
@@ -77,11 +80,11 @@ BEGIN {
     desc     = ""
     seq      = ""
 
-    print "entry_id\tdescription\tlength\tavg_mass_Da\tmono_mass_Da\tnonCanon"
+    print "entry_id\tdescription\tlength\tavg_mass_Da\tmono_mass_Da\tmono_mass_no_init_met_Da\tmono_mass_no_init_met_nterm_acetyl_Da\tmono_mass_no_init_met_minus_h2o_Da\tnonCanon"
 }
 
 # ── Function: compute and print masses for the current entry ────────────────
-function process_entry(    i, aa, m_sum, a_sum, canon_len, nc_str) {
+function process_entry(    i, aa, m_sum, a_sum, canon_len, nc_str, first_aa, mono_no_init_met, mono_no_init_met_acetyl, mono_no_init_met_minus_h2o) {
     m_sum     = WATER_MONO
     a_sum     = WATER_AVG
     canon_len = 0
@@ -99,12 +102,33 @@ function process_entry(    i, aa, m_sum, a_sum, canon_len, nc_str) {
         }
     }
 
-    printf "%s\t%s\t%d\t%.5f\t%.5f\t%s\n",
-        entry_id, desc, canon_len, a_sum, m_sum, nc_str
+    mono_no_init_met = "."
+    mono_no_init_met_acetyl = "."
+    mono_no_init_met_minus_h2o = "."
+    first_aa = substr(seq, 1, 1)
+
+    # Report common mature-form hypotheses for intact-protein matching.
+    if (canon_len > 1 && first_aa == "M") {
+        mono_no_init_met = m_sum - mono["M"]
+        mono_no_init_met_acetyl = mono_no_init_met + ACETYL_MONO
+        mono_no_init_met_minus_h2o = mono_no_init_met - WATER_MONO
+    }
+
+    printf "%s\t%s\t%d\t%.5f\t%.5f\t%s\t%s\t%s\t%s\n",
+        entry_id, desc, canon_len, a_sum, m_sum,
+        format_opt(mono_no_init_met),
+        format_opt(mono_no_init_met_acetyl),
+        format_opt(mono_no_init_met_minus_h2o),
+        nc_str
 
     if (nc_str != "") {
         print "WARNING: " entry_id " — non-canonical residues skipped: " nc_str > "/dev/stderr"
     }
+}
+
+function format_opt(v) {
+    if (v == ".") return v
+    return sprintf("%.5f", v)
 }
 
 # ── Parse FASTA ─────────────────────────────────────────────────────────────

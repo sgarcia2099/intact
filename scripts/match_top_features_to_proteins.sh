@@ -34,12 +34,16 @@ Required input columns:
   --features: sample_id, flashdeconv_feature_id, neutral_mass, intensity, retention_time_min
               optional: quality_score, isotope_cosine
   --protein-masses: entry_id, description, length, mono_mass_Da, nonCanon
+                    optional: mono_mass_no_init_met_Da,
+                              mono_mass_no_init_met_nterm_acetyl_Da,
+                              mono_mass_no_init_met_minus_h2o_Da
 
 Output columns:
   sample_id, flashdeconv_feature_id, feature_rank, feature_neutral_mass_Da,
   feature_intensity, feature_retention_time_min, feature_quality_score,
   feature_isotope_cosine, ptm_delta_Da, ptm_label,
   candidate_rank, entry_id, description, length, protein_mono_mass_Da,
+  protein_mass_source,
   mass_error_Da, mass_error_ppm, nonCanon
 EOF
 }
@@ -145,7 +149,7 @@ is_number "${MIN_INTENSITY}" || fail "--min-intensity must be numeric"
 
 if (( TOP_FEATURES == 0 || TOP_PROTEINS == 0 )); then
   mkdir -p "$(dirname "${OUTPUT_FILE}")"
-  printf 'sample_id\tflashdeconv_feature_id\tfeature_rank\tfeature_neutral_mass_Da\tfeature_intensity\tfeature_retention_time_min\tfeature_quality_score\tfeature_isotope_cosine\tptm_delta_Da\tptm_label\tcandidate_rank\tentry_id\tdescription\tlength\tprotein_mono_mass_Da\tmass_error_Da\tmass_error_ppm\tnonCanon\n' > "${OUTPUT_FILE}"
+  printf 'sample_id\tflashdeconv_feature_id\tfeature_rank\tfeature_neutral_mass_Da\tfeature_intensity\tfeature_retention_time_min\tfeature_quality_score\tfeature_isotope_cosine\tptm_delta_Da\tptm_label\tcandidate_rank\tentry_id\tdescription\tlength\tprotein_mono_mass_Da\tprotein_mass_source\tmass_error_Da\tmass_error_ppm\tnonCanon\n' > "${OUTPUT_FILE}"
   warn "top-features or top-proteins is 0; wrote header-only output"
   exit 0
 fi
@@ -187,19 +191,34 @@ NR > 1 {
   len = $(idx["length"])
   mono = $(idx["mono_mass_Da"])
   noncanon = $(idx["nonCanon"])
+  mono_no_init = "."
+  mono_no_init_acetyl = "."
+  mono_no_init_minus_h2o = "."
+  if ("mono_mass_no_init_met_Da" in idx) mono_no_init = $(idx["mono_mass_no_init_met_Da"])
+  if ("mono_mass_no_init_met_nterm_acetyl_Da" in idx) mono_no_init_acetyl = $(idx["mono_mass_no_init_met_nterm_acetyl_Da"])
+  if ("mono_mass_no_init_met_minus_h2o_Da" in idx) mono_no_init_minus_h2o = $(idx["mono_mass_no_init_met_minus_h2o_Da"])
 
   if (entry == "" || mono == "") next
   if (mono + 0 <= 0) next
   if (skip_noncanon == 1 && noncanon != "") next
 
-  print entry, desc, len, mono + 0, noncanon
+  print entry, desc, len, mono + 0, "full_length", noncanon
+  if (mono_no_init != "" && mono_no_init != "." && (mono_no_init + 0) > 0) {
+    print entry, desc, len, mono_no_init + 0, "no_init_met", noncanon
+  }
+  if (mono_no_init_acetyl != "" && mono_no_init_acetyl != "." && (mono_no_init_acetyl + 0) > 0) {
+    print entry, desc, len, mono_no_init_acetyl + 0, "no_init_met_nterm_acetyl", noncanon
+  }
+  if (mono_no_init_minus_h2o != "" && mono_no_init_minus_h2o != "." && (mono_no_init_minus_h2o + 0) > 0) {
+    print entry, desc, len, mono_no_init_minus_h2o + 0, "no_init_met_minus_h2o", noncanon
+  }
 }
 ' "${PROTEIN_MASSES_FILE}" > "${proteins_tmp}" || fail "Failed parsing protein masses table"
 
 [[ -s "${proteins_tmp}" ]] || fail "No protein rows available after filtering"
 
 if [[ ${SKIP_NONCANON} -eq 0 ]]; then
-  if awk -F '\t' 'NR == 1 {next} $5 != "" {found = 1; exit} END {exit(found ? 0 : 1)}' "${proteins_tmp}"; then
+  if awk -F '\t' '$6 != "" {found = 1; exit} END {exit(found ? 0 : 1)}' "${proteins_tmp}"; then
     warn "Protein masses include entries with non-canonical residues (nonCanon not empty)"
   fi
 fi
@@ -246,7 +265,7 @@ NR > 1 {
   | awk -F '\t' -v OFS='\t' '{print NR, $1, $2, $3, $4, $5, $6, $7}' > "${features_top_tmp}" || fail "Failed selecting top features"
 
 if [[ ! -s "${features_top_tmp}" ]]; then
-  printf 'sample_id\tflashdeconv_feature_id\tfeature_rank\tfeature_neutral_mass_Da\tfeature_intensity\tfeature_retention_time_min\tfeature_quality_score\tfeature_isotope_cosine\tptm_delta_Da\tptm_label\tcandidate_rank\tentry_id\tdescription\tlength\tprotein_mono_mass_Da\tmass_error_Da\tmass_error_ppm\tnonCanon\n' > "${OUTPUT_FILE}"
+  printf 'sample_id\tflashdeconv_feature_id\tfeature_rank\tfeature_neutral_mass_Da\tfeature_intensity\tfeature_retention_time_min\tfeature_quality_score\tfeature_isotope_cosine\tptm_delta_Da\tptm_label\tcandidate_rank\tentry_id\tdescription\tlength\tprotein_mono_mass_Da\tprotein_mass_source\tmass_error_Da\tmass_error_ppm\tnonCanon\n' > "${OUTPUT_FILE}"
   warn "No qualifying features found; wrote header-only output"
   exit 0
 fi
@@ -286,7 +305,8 @@ FNR == NR {
   p_desc[p_count] = $2
   p_len[p_count] = $3 + 0
   p_mass[p_count] = $4 + 0
-  p_noncanon[p_count] = $5
+  p_mass_source[p_count] = $5
+  p_noncanon[p_count] = $6
   next
 }
 
@@ -310,7 +330,7 @@ FNR == NR {
       if (abs_err_da <= tol_da) {
         err_ppm = (err_da / f_mass) * 1000000.0
         abs_err_ppm = abs(err_ppm)
-        print f_rank, sample_id, feature_id, f_mass, f_intensity, f_rt, f_qs, f_iso, delta, label, p_entry[i], p_desc[i], p_len[i], p_mass[i], err_da, abs_err_da, err_ppm, abs_err_ppm, p_noncanon[i]
+        print f_rank, sample_id, feature_id, f_mass, f_intensity, f_rt, f_qs, f_iso, delta, label, p_entry[i], p_desc[i], p_len[i], p_mass[i], p_mass_source[i], err_da, abs_err_da, err_ppm, abs_err_ppm, p_noncanon[i]
       }
     }
   }
@@ -318,10 +338,10 @@ FNR == NR {
 ' "${proteins_tmp}" "${features_top_tmp}" > "${candidates_tmp}" || fail "Failed generating match candidates"
 
 {
-  printf 'sample_id\tflashdeconv_feature_id\tfeature_rank\tfeature_neutral_mass_Da\tfeature_intensity\tfeature_retention_time_min\tfeature_quality_score\tfeature_isotope_cosine\tptm_delta_Da\tptm_label\tcandidate_rank\tentry_id\tdescription\tlength\tprotein_mono_mass_Da\tmass_error_Da\tmass_error_ppm\tnonCanon\n'
+  printf 'sample_id\tflashdeconv_feature_id\tfeature_rank\tfeature_neutral_mass_Da\tfeature_intensity\tfeature_retention_time_min\tfeature_quality_score\tfeature_isotope_cosine\tptm_delta_Da\tptm_label\tcandidate_rank\tentry_id\tdescription\tlength\tprotein_mono_mass_Da\tprotein_mass_source\tmass_error_Da\tmass_error_ppm\tnonCanon\n'
 
   if [[ -s "${candidates_tmp}" ]]; then
-    sort -t $'\t' -k1,1n -k16,16g -k18,18g -k13,13nr -k11,11 "${candidates_tmp}" > "${sorted_candidates_tmp}"
+    sort -t $'\t' -k1,1n -k17,17g -k19,19g -k13,13nr -k11,11 "${candidates_tmp}" > "${sorted_candidates_tmp}"
 
     awk -F '\t' -v OFS='\t' -v top_k="${TOP_PROTEINS}" '
     {
@@ -332,8 +352,8 @@ FNR == NR {
       seen[f_rank]++
       candidate_rank = seen[f_rank]
 
-      printf "%s\t%s\t%d\t%.6f\t%.6f\t%.6f\t%s\t%s\t%.4f\t%s\t%d\t%s\t%s\t%d\t%.6f\t%.6f\t%.3f\t%s\n",
-        $2, $3, f_rank, $4, $5, $6, $7, $8, $9, $10, candidate_rank, $11, $12, $13, $14, $15, $17, $19
+      printf "%s\t%s\t%d\t%.6f\t%.6f\t%.6f\t%s\t%s\t%.4f\t%s\t%d\t%s\t%s\t%d\t%.6f\t%s\t%.6f\t%.3f\t%s\n",
+        $2, $3, f_rank, $4, $5, $6, $7, $8, $9, $10, candidate_rank, $11, $12, $13, $14, $15, $16, $18, $20
     }
     ' "${sorted_candidates_tmp}"
   fi
