@@ -10,4 +10,8 @@ Example single-file invocation:
 
 Example batch invocation with filtering:
   ${ROOT_DIR}/pipeline.sh --input /data/raw --output /data/results --batch --filter
+
+Example post-processing protein matching:
+  ${ROOT_DIR}/scripts/calc_protein_mass.sh /data/proteins.fasta > /data/results/tables/protein_masses.tsv
+  ${ROOT_DIR}/scripts/match_top_features_to_proteins.sh --features /data/results/tables/run01_neutral_masses.tsv --protein-masses /data/results/tables/protein_masses.tsv --output /data/results/tables/run01_protein_matches.tsv
 EOF

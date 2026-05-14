@@ -85,6 +85,10 @@ For each sample, the pipeline writes:
 - `tables/<sample>_neutral_masses.filtered.tsv`: optional R-filtered table
 - `logs/<sample>/*.log`: per-stage logs
 
+Optional post-processing output:
+
+- `tables/<sample>_protein_matches.tsv`: top-feature to candidate-protein mass matches from `match_top_features_to_proteins.sh`
+
 The normalized table includes stable columns for:
 
 - `sample_id`: sample label used by the pipeline for this row.
@@ -137,6 +141,75 @@ docker run --rm --security-opt seccomp=unconfined proteowizard/pwiz-skyline-i-ag
 docker run --rm ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDeconv --help
 docker run --rm -v "$PWD/config:/config" ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDeconv -write_ini /config/generated.ini
 ```
+
+## Matching Top Features To Candidate Proteins
+
+This repository includes a standalone post-processing script to map high-intensity deconvolved features to protein candidates by intact monoisotopic mass:
+
+- Input A: `tables/<sample>_neutral_masses.tsv` (or `tables/<sample>_neutral_masses.filtered.tsv`)
+- Input B: protein masses table produced by `calc_protein_mass.sh`
+- Output: `tables/<sample>_protein_matches.tsv`
+
+Generate the protein mass table from FASTA:
+
+```bash
+./scripts/calc_protein_mass.sh /data/proteins.fasta > /data/results/tables/protein_masses.tsv
+```
+
+Run top-feature matching:
+
+```bash
+./scripts/match_top_features_to_proteins.sh \
+	--features /data/results/tables/run01_neutral_masses.tsv \
+	--protein-masses /data/results/tables/protein_masses.tsv \
+	--output /data/results/tables/run01_protein_matches.tsv
+```
+
+Defaults:
+
+- Top features selected by intensity: `10`
+- Max candidates retained per feature: `5`
+- Mass tolerance: `10 ppm`
+- PTM delta hypotheses (Da): `0,57.0215,42.0106,79.9663`
+
+You can override these at runtime, for example:
+
+```bash
+./scripts/match_top_features_to_proteins.sh \
+	--features /data/results/tables/run01_neutral_masses.filtered.tsv \
+	--protein-masses /data/results/tables/protein_masses.tsv \
+	--output /data/results/tables/run01_protein_matches.tsv \
+	--top-features 10 \
+	--top-proteins 5 \
+	--ppm 5 \
+	--ptm-deltas "0,57.0215,42.0106,79.9663" \
+	--min-intensity 100000
+```
+
+The output columns are:
+
+- `sample_id`
+- `flashdeconv_feature_id`
+- `feature_rank`
+- `feature_neutral_mass_Da`
+- `feature_intensity`
+- `feature_retention_time_min`
+- `ptm_delta_Da`
+- `ptm_label`
+- `candidate_rank`
+- `entry_id`
+- `description`
+- `length`
+- `protein_mono_mass_Da`
+- `mass_error_Da`
+- `mass_error_ppm`
+- `nonCanon`
+
+Notes:
+
+- Matching is monoisotopic (`neutral_mass` to `mono_mass_Da`).
+- PTM support in this script is fixed-delta hypothesis matching (fast and deterministic), not combinatorial site localization.
+- If fewer than 5 candidates are found for a feature, the script returns fewer rows for that feature.
 
 ## Notes on tuning
 
