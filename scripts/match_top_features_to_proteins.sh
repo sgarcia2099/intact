@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ROOT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
+
 FEATURES_FILE=""
 PROTEIN_MASSES_FILE=""
 OUTPUT_FILE=""
@@ -46,6 +49,28 @@ fail() {
 
 warn() {
   printf 'Warning: %s\n' "$*" >&2
+}
+
+resolve_existing_path() {
+  local raw_path=$1
+
+  if [[ -z "${raw_path}" ]]; then
+    return 1
+  fi
+
+  if [[ -e "${raw_path}" ]]; then
+    printf '%s\n' "${raw_path}"
+    return 0
+  fi
+
+  if [[ "${raw_path}" != /* ]]; then
+    if [[ -e "${ROOT_DIR}/${raw_path}" ]]; then
+      printf '%s\n' "${ROOT_DIR}/${raw_path}"
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 is_number() {
@@ -104,8 +129,11 @@ done
 [[ -n "${PROTEIN_MASSES_FILE}" ]] || fail "--protein-masses is required"
 [[ -n "${OUTPUT_FILE}" ]] || fail "--output is required"
 
-[[ -f "${FEATURES_FILE}" ]] || fail "Features file not found: ${FEATURES_FILE}"
-[[ -f "${PROTEIN_MASSES_FILE}" ]] || fail "Protein masses file not found: ${PROTEIN_MASSES_FILE}"
+FEATURES_FILE=$(resolve_existing_path "${FEATURES_FILE}") || fail "Features file not found: ${FEATURES_FILE} (cwd: ${PWD}, repo-root: ${ROOT_DIR})"
+PROTEIN_MASSES_FILE=$(resolve_existing_path "${PROTEIN_MASSES_FILE}") || fail "Protein masses file not found: ${PROTEIN_MASSES_FILE} (cwd: ${PWD}, repo-root: ${ROOT_DIR})"
+
+[[ -f "${FEATURES_FILE}" ]] || fail "Features path is not a file: ${FEATURES_FILE}"
+[[ -f "${PROTEIN_MASSES_FILE}" ]] || fail "Protein masses path is not a file: ${PROTEIN_MASSES_FILE}"
 
 [[ "${TOP_FEATURES}" =~ ^[0-9]+$ ]] || fail "--top-features must be a non-negative integer"
 [[ "${TOP_PROTEINS}" =~ ^[0-9]+$ ]] || fail "--top-proteins must be a non-negative integer"
@@ -206,7 +234,7 @@ NR > 1 {
 }
 ' "${FEATURES_FILE}" \
   | sort -t $'\t' -k4,4gr -k2,2 -k3,3g \
-  | head -n "${TOP_FEATURES}" \
+  | awk -F '\t' -v OFS='\t' -v top_n="${TOP_FEATURES}" 'NR <= top_n { print }' \
   | awk -F '\t' -v OFS='\t' '{print NR, $1, $2, $3, $4, $5}' > "${features_top_tmp}" || fail "Failed selecting top features"
 
 if [[ ! -s "${features_top_tmp}" ]]; then

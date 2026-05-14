@@ -59,7 +59,7 @@ mkdir -p "$(dirname "${OUTPUT_FILE}")"
 # This mapper normalizes several known aliases into one stable schema.
 awk -F '\t' -v OFS='\t' -v sample_id="${SAMPLE_ID}" -v source_file="${SOURCE_FILE}" '
 BEGIN {
-  print "sample_id", "source_file", "neutral_mass", "intensity", "retention_time_min", "charge", "quality_score", "trace_start_min", "trace_end_min", "flashdeconv_feature_id"
+  print "sample_id", "source_file", "neutral_mass", "intensity", "retention_time_min", "charge", "quality_score", "isotope_cosine", "trace_start_min", "trace_end_min", "flashdeconv_feature_id"
 }
 NR == 1 {
   for (i = 1; i <= NF; i++) {
@@ -86,9 +86,17 @@ NR > 1 {
   charge = value(idx, "MinCharge")
   if (charge == "") charge = value(idx, "Charge")
 
-  score = value(idx, "Score")
+  # QScore is the primary FLASHDeconv deconvolution quality score.
+  # IsotopeCosine / PerIsotopeCosine is the isotope envelope fit score (0-1).
+  # Fall back to legacy aliases for older OpenMS builds.
+  score = value(idx, "QScore")
+  if (score == "") score = value(idx, "Score")
   if (score == "") score = value(idx, "Quality")
   if (score == "") score = "."
+
+  iso_cos = value(idx, "IsotopeCosine")
+  if (iso_cos == "") iso_cos = value(idx, "PerIsotopeCosine")
+  if (iso_cos == "") iso_cos = "."
 
   trace_start = value(idx, "StartRetentionTime")
   trace_end = value(idx, "EndRetentionTime")
@@ -97,7 +105,7 @@ NR > 1 {
   if (feature_id == "") feature_id = NR - 1
 
   if (mass != "" && intensity != "") {
-    print sample_id, source_file, mass, intensity, rt, charge, score, trace_start, trace_end, feature_id
+    print sample_id, source_file, mass, intensity, rt, charge, score, iso_cos, trace_start, trace_end, feature_id
   }
 }
 

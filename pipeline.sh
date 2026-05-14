@@ -209,7 +209,8 @@ process_sample() {
       --output "${filtered_tsv}" \
       --ppm "${FILTER_PPM}" \
       --rt-window "${FILTER_RT_MINUTES}" \
-      --min-intensity "${FILTER_MIN_INTENSITY}"; then
+      --min-intensity "${FILTER_MIN_INTENSITY}" \
+      --min-qscore "${FILTER_MIN_QSCORE:-0}"; then
       log "Filtering failed for ${sample_id}"
       return 1
     fi

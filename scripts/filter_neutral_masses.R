@@ -8,13 +8,14 @@ usage <- function() {
       "Usage:",
       "  filter_neutral_masses.R --input <table.tsv> --output <filtered.tsv>",
       "    [--ppm <ppm>] [--rt-window <minutes>] [--min-intensity <value>]",
+      "    [--min-qscore <value>]",
       sep = "\n"
     )
   )
 }
 
 parse_args <- function(args) {
-  opts <- list(ppm = 10, rt_window = 0.5, min_intensity = 0)
+  opts <- list(ppm = 10, rt_window = 0.5, min_intensity = 0, min_qscore = 0)
   i <- 1
   while (i <= length(args)) {
     key <- args[[i]]
@@ -31,6 +32,7 @@ parse_args <- function(args) {
     else if (key == "--ppm") opts$ppm <- as.numeric(value)
     else if (key == "--rt-window") opts$rt_window <- as.numeric(value)
     else if (key == "--min-intensity") opts$min_intensity <- as.numeric(value)
+    else if (key == "--min-qscore") opts$min_qscore <- as.numeric(value)
     else stop(sprintf("Unknown argument: %s", key), call. = FALSE)
     i <- i + 2
   }
@@ -66,8 +68,14 @@ tab <- tab[!is.na(tab$neutral_mass) & !is.na(tab$intensity) & !is.na(tab$retenti
 tab <- tab[tab$intensity >= opts$min_intensity, , drop = FALSE]
 post_prefilter_rows <- nrow(tab)
 
+if (opts$min_qscore > 0 && "quality_score" %in% names(tab)) {
+  qs_numeric <- suppressWarnings(as.numeric(tab$quality_score))
+  tab <- tab[!is.na(qs_numeric) & qs_numeric >= opts$min_qscore, , drop = FALSE]
+}
+post_qscore_rows <- nrow(tab)
+
 if (nrow(tab) == 0) {
-  message(sprintf("Filtering summary: input=%d, prefilter_kept=0, dedup_kept=0", input_rows))
+  message(sprintf("Filtering summary: input=%d, prefilter_kept=0, qscore_kept=0, dedup_kept=0", input_rows))
   write.table(tab, file = opts$output, sep = "\t", quote = FALSE, row.names = FALSE)
   quit(save = "no", status = 0)
 }
@@ -92,9 +100,10 @@ for (i in seq_len(nrow(tab))) {
 
 filtered <- tab[keep, , drop = FALSE]
 message(sprintf(
-  "Filtering summary: input=%d, prefilter_kept=%d, dedup_kept=%d",
+  "Filtering summary: input=%d, prefilter_kept=%d, qscore_kept=%d, dedup_kept=%d",
   input_rows,
   post_prefilter_rows,
+  post_qscore_rows,
   nrow(filtered)
 ))
 write.table(filtered, file = opts$output, sep = "\t", quote = FALSE, row.names = FALSE)
