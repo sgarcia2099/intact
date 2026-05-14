@@ -113,19 +113,21 @@ Optional downstream output:
 
 ### Normalized Table Schema
 
-The normalized table currently exports:
+The normalized table (`tables/<sample>_neutral_masses.tsv`) currently exports:
 
-- sample_id
-- source_file
-- neutral_mass
-- intensity
-- retention_time_min
-- charge
-- quality_score
-- isotope_cosine
-- trace_start_min
-- trace_end_min
-- flashdeconv_feature_id
+- `sample_id`: sample identifier passed to the pipeline (`--sample` or basename fallback).
+- `source_file`: source mzML file path used for deconvolution.
+- `neutral_mass`: deconvolved monoisotopic neutral mass in Da.
+- `intensity`: deconvolved feature abundance (typically summed feature intensity).
+- `retention_time_min`: representative retention time in minutes for the feature.
+- `charge`: representative/anchor charge state for the feature (usually minimum reported charge).
+- `quality_score`: FLASHDeconv deconvolution-quality metric (dimensionless; higher is better).
+- `isotope_cosine`: isotope-envelope cosine similarity score (0-1; closer to 1 is better).
+- `trace_start_min`: start retention time in minutes for the feature trace.
+- `trace_end_min`: end retention time in minutes for the feature trace.
+- `flashdeconv_feature_id`: feature identifier from FLASHDeconv (or row-based fallback ID).
+
+The filtered table (`tables/<sample>_neutral_masses.filtered.tsv`) retains the same columns and schema, but with rows removed by quality/intensity/deduplication rules.
 
 Quality mapping details from FLASHDeconv features table:
 
@@ -165,12 +167,12 @@ Recommended quality threshold guidance:
 
 Output columns:
 
-- entry_id
-- description
-- length
-- avg_mass_Da
-- mono_mass_Da
-- nonCanon
+- `entry_id`: FASTA identifier (header text up to first space).
+- `description`: remaining FASTA header text after `entry_id`.
+- `length`: count of canonical amino acid residues used in mass calculation.
+- `avg_mass_Da`: calculated average intact-protein mass in Da (includes one terminal water).
+- `mono_mass_Da`: calculated monoisotopic intact-protein mass in Da (includes one terminal water).
+- `nonCanon`: semicolon-delimited non-canonical residues and 1-based positions excluded from mass calculation (empty if none).
 
 ### 2) Match top features to candidates
 
@@ -198,6 +200,25 @@ Example stricter run:
   --ppm 5 \
   --min-intensity 100000
 ```
+
+`tables/<sample>_protein_matches.tsv` columns:
+
+- `sample_id`: sample identifier carried from the normalized input table.
+- `flashdeconv_feature_id`: originating deconvolved feature ID.
+- `feature_rank`: rank of feature by intensity among selected top features (1 = highest).
+- `feature_neutral_mass_Da`: observed deconvolved neutral mass in Da.
+- `feature_intensity`: observed feature intensity from normalized table.
+- `feature_retention_time_min`: observed feature retention time in minutes.
+- `ptm_delta_Da`: PTM hypothesis delta mass in Da applied during matching.
+- `ptm_label`: label for the PTM hypothesis (`unmodified`, `carbamidomethyl`, `acetyl`, `phospho`, or generic delta label).
+- `candidate_rank`: rank of candidate protein for that feature (1 = best mass match).
+- `entry_id`: matched protein identifier from the protein mass table.
+- `description`: matched protein description from FASTA header.
+- `length`: matched protein canonical residue length.
+- `protein_mono_mass_Da`: matched protein monoisotopic mass in Da (unmodified baseline mass).
+- `mass_error_Da`: signed mass error in Da between hypothesis and observed feature mass.
+- `mass_error_ppm`: signed mass error in ppm.
+- `nonCanon`: copied non-canonical residue annotation from protein mass table.
 
 ## Configuration Notes
 
