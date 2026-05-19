@@ -6,7 +6,7 @@
 # Usage:  ./calc_protein_mass.sh <protein.fasta>
 # Output: TSV to stdout — entry_id, description, length, avg_mass_Da, mono_mass_Da,
 #         mono_mass_no_init_met_Da, mono_mass_no_init_met_nterm_acetyl_Da,
-#         mono_mass_no_init_met_minus_h2o_Da, nonCanon
+#         mono_mass_no_init_met_minus_h2o_Da, has_cys, has_sty, nonCanon
 
 set -euo pipefail
 
@@ -80,15 +80,17 @@ BEGIN {
     desc     = ""
     seq      = ""
 
-    print "entry_id\tdescription\tlength\tavg_mass_Da\tmono_mass_Da\tmono_mass_no_init_met_Da\tmono_mass_no_init_met_nterm_acetyl_Da\tmono_mass_no_init_met_minus_h2o_Da\tnonCanon"
+    print "entry_id\tdescription\tlength\tavg_mass_Da\tmono_mass_Da\tmono_mass_no_init_met_Da\tmono_mass_no_init_met_nterm_acetyl_Da\tmono_mass_no_init_met_minus_h2o_Da\thas_cys\thas_sty\tnonCanon"
 }
 
 # ── Function: compute and print masses for the current entry ────────────────
-function process_entry(    i, aa, m_sum, a_sum, canon_len, nc_str, first_aa, mono_no_init_met, mono_no_init_met_acetyl, mono_no_init_met_minus_h2o) {
+function process_entry(    i, aa, m_sum, a_sum, canon_len, nc_str, first_aa, mono_no_init_met, mono_no_init_met_acetyl, mono_no_init_met_minus_h2o, has_cys, has_sty) {
     m_sum     = WATER_MONO
     a_sum     = WATER_AVG
     canon_len = 0
     nc_str    = ""
+    has_cys   = 0
+    has_sty   = 0
 
     for (i = 1; i <= length(seq); i++) {
         aa = substr(seq, i, 1)
@@ -96,6 +98,8 @@ function process_entry(    i, aa, m_sum, a_sum, canon_len, nc_str, first_aa, mon
             m_sum += mono[aa]
             a_sum += avg[aa]
             canon_len++
+            if (aa == "C") has_cys = 1
+            if (aa == "S" || aa == "T" || aa == "Y") has_sty = 1
         } else {
             if (nc_str != "") nc_str = nc_str "; "
             nc_str = nc_str aa i
@@ -114,12 +118,12 @@ function process_entry(    i, aa, m_sum, a_sum, canon_len, nc_str, first_aa, mon
         mono_no_init_met_minus_h2o = mono_no_init_met - WATER_MONO
     }
 
-    printf "%s\t%s\t%d\t%.5f\t%.5f\t%s\t%s\t%s\t%s\n",
+    printf "%s\t%s\t%d\t%.5f\t%.5f\t%s\t%s\t%s\t%d\t%d\t%s\n",
         entry_id, desc, canon_len, a_sum, m_sum,
         format_opt(mono_no_init_met),
         format_opt(mono_no_init_met_acetyl),
         format_opt(mono_no_init_met_minus_h2o),
-        nc_str
+        has_cys, has_sty, nc_str
 
     if (nc_str != "") {
         print "WARNING: " entry_id " — non-canonical residues skipped: " nc_str > "/dev/stderr"

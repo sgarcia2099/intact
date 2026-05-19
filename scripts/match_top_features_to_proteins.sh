@@ -15,6 +15,8 @@ PPM_TOL=10
 PTM_DELTAS="0,57.0215,42.0106,79.9663"
 MIN_INTENSITY=0
 SKIP_NONCANON=0
+ALLOW_STACKING=0
+MAX_ERROR_DA=1.0
 
 usage() {
   cat <<'EOF'
@@ -28,7 +30,9 @@ Usage:
     [--ppm 10] \
     [--ptm-deltas "0,57.0215,42.0106,79.9663"] \
     [--min-intensity 0] \
-    [--skip-noncanon 0]
+    [--skip-noncanon 0] \\
+    [--allow-hypothesis-stacking 0] \\
+    [--max-error-da 1.0]
 
 Required input columns:
   --features: sample_id, flashdeconv_feature_id, neutral_mass, intensity, retention_time_min
@@ -121,6 +125,14 @@ while [[ $# -gt 0 ]]; do
       SKIP_NONCANON=${2:-}
       shift 2
       ;;
+    --allow-hypothesis-stacking)
+      ALLOW_STACKING=${2:-}
+      shift 2
+      ;;
+    --max-error-da)
+      MAX_ERROR_DA=${2:-}
+      shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -144,8 +156,10 @@ PROTEIN_MASSES_FILE=$(resolve_existing_path "${PROTEIN_MASSES_FILE}") || fail "P
 [[ "${TOP_FEATURES}" =~ ^[0-9]+$ ]] || fail "--top-features must be a non-negative integer"
 [[ "${TOP_PROTEINS}" =~ ^[0-9]+$ ]] || fail "--top-proteins must be a non-negative integer"
 [[ "${SKIP_NONCANON}" =~ ^[01]$ ]] || fail "--skip-noncanon must be 0 or 1"
+[[ "${ALLOW_STACKING}" =~ ^[01]$ ]] || fail "--allow-hypothesis-stacking must be 0 or 1"
 is_number "${PPM_TOL}" || fail "--ppm must be numeric"
 is_number "${MIN_INTENSITY}" || fail "--min-intensity must be numeric"
+is_number "${MAX_ERROR_DA}" || fail "--max-error-da must be numeric"
 
 if (( TOP_FEATURES == 0 || TOP_PROTEINS == 0 )); then
   mkdir -p "$(dirname "${OUTPUT_FILE}")"
@@ -202,15 +216,21 @@ NR > 1 {
   if (mono + 0 <= 0) next
   if (skip_noncanon == 1 && noncanon != "") next
 
-  print entry, desc, len, mono + 0, "full_length", noncanon
+  # has_cys / has_sty: default to 1 (feasibility assumed) when column is absent
+  hc = 1
+  hs = 1
+  if ("has_cys" in idx) hc = ($(idx["has_cys"]) == "" ? 1 : $(idx["has_cys"]) + 0)
+  if ("has_sty" in idx) hs = ($(idx["has_sty"]) == "" ? 1 : $(idx["has_sty"]) + 0)
+
+  print entry, desc, len, mono + 0, "full_length", hc, hs, noncanon
   if (mono_no_init != "" && mono_no_init != "." && (mono_no_init + 0) > 0) {
-    print entry, desc, len, mono_no_init + 0, "no_init_met", noncanon
+    print entry, desc, len, mono_no_init + 0, "no_init_met", hc, hs, noncanon
   }
   if (mono_no_init_acetyl != "" && mono_no_init_acetyl != "." && (mono_no_init_acetyl + 0) > 0) {
-    print entry, desc, len, mono_no_init_acetyl + 0, "no_init_met_nterm_acetyl", noncanon
+    print entry, desc, len, mono_no_init_acetyl + 0, "no_init_met_nterm_acetyl", hc, hs, noncanon
   }
   if (mono_no_init_minus_h2o != "" && mono_no_init_minus_h2o != "." && (mono_no_init_minus_h2o + 0) > 0) {
-    print entry, desc, len, mono_no_init_minus_h2o + 0, "no_init_met_minus_h2o", noncanon
+    print entry, desc, len, mono_no_init_minus_h2o + 0, "no_init_met_minus_h2o", hc, hs, noncanon
   }
 }
 ' "${PROTEIN_MASSES_FILE}" > "${proteins_tmp}" || fail "Failed parsing protein masses table"
@@ -218,7 +238,7 @@ NR > 1 {
 [[ -s "${proteins_tmp}" ]] || fail "No protein rows available after filtering"
 
 if [[ ${SKIP_NONCANON} -eq 0 ]]; then
-  if awk -F '\t' '$6 != "" {found = 1; exit} END {exit(found ? 0 : 1)}' "${proteins_tmp}"; then
+  if awk -F '\t' '$8 != "" {found = 1; exit} END {exit(found ? 0 : 1)}' "${proteins_tmp}"; then
     warn "Protein masses include entries with non-canonical residues (nonCanon not empty)"
   fi
 fi
@@ -271,7 +291,7 @@ if [[ ! -s "${features_top_tmp}" ]]; then
 fi
 
 # Generate all matching candidates within tolerance for each feature/PTM hypothesis.
-awk -F '\t' -v OFS='\t' -v deltas="${PTM_DELTAS}" -v ppm_tol="${PPM_TOL}" '
+awk -F '\t' -v OFS='\t' -v deltas="${PTM_DELTAS}" -v ppm_tol="${PPM_TOL}" -v allow_stacking="${ALLOW_STACKING}" -v max_error_da="${MAX_ERROR_DA}" '
 function abs(x) {
   return (x < 0 ? -x : x)
 }
@@ -306,7 +326,9 @@ FNR == NR {
   p_len[p_count] = $3 + 0
   p_mass[p_count] = $4 + 0
   p_mass_source[p_count] = $5
-  p_noncanon[p_count] = $6
+  p_has_cys[p_count] = ($6 == "" ? 1 : $6 + 0)
+  p_has_sty[p_count] = ($7 == "" ? 1 : $7 + 0)
+  p_noncanon[p_count] = $8
   next
 }
 
@@ -324,9 +346,20 @@ FNR == NR {
   for (d = 1; d <= delta_count; d++) {
     delta = delta_arr[d]
     label = ptm_label(delta)
+    is_carbamidomethyl = (sprintf("%.4f", delta) == "57.0215")
+    is_acetyl          = (label == "acetyl")
+    is_phospho         = (sprintf("%.4f", delta) == "79.9663")
     for (i = 1; i <= p_count; i++) {
+      # Residue-feasibility: skip if required residue type is absent
+      if (is_carbamidomethyl && p_has_cys[i] == 0) continue
+      if (is_phospho         && p_has_sty[i] == 0) continue
+      # Hypothesis-stacking restriction: the no_init_met_nterm_acetyl mass source
+      # already encodes N-terminal acetylation; combining it with an acetyl PTM
+      # delta would represent a biologically implausible double-acetylation.
+      if (!allow_stacking && p_mass_source[i] == "no_init_met_nterm_acetyl" && is_acetyl) continue
       err_da = (p_mass[i] + delta) - f_mass
       abs_err_da = abs(err_da)
+      if (abs_err_da > max_error_da) continue
       if (abs_err_da <= tol_da) {
         err_ppm = (err_da / f_mass) * 1000000.0
         abs_err_ppm = abs(err_ppm)

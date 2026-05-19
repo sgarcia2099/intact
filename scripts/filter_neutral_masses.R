@@ -15,7 +15,7 @@ usage <- function() {
 }
 
 parse_args <- function(args) {
-  opts <- list(ppm = 10, rt_window = 0.5, min_intensity = 0, min_qscore = 0)
+  opts <- list(ppm = 10, rt_window = 0.5, min_intensity = 0, min_qscore = 0.5)
   i <- 1
   while (i <= length(args)) {
     key <- args[[i]]
