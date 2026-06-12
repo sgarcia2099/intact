@@ -7,6 +7,18 @@ ROOT_DIR=${SCRIPT_DIR}
 DEFAULT_CONFIG_FILE="${ROOT_DIR}/config/pipeline.env.example"
 LOCAL_CONFIG_FILE="${ROOT_DIR}/config/pipeline.env"
 
+# Preserve explicit environment overrides across config sourcing.
+FILTER_MIN_INTENSITY_ENV_OVERRIDE="${FILTER_MIN_INTENSITY-}"
+FILTER_MIN_INTENSITY_ENV_SET=0
+if [[ -n "${FILTER_MIN_INTENSITY+x}" ]]; then
+  FILTER_MIN_INTENSITY_ENV_SET=1
+fi
+FILTER_MIN_QSCORE_ENV_OVERRIDE="${FILTER_MIN_QSCORE-}"
+FILTER_MIN_QSCORE_ENV_SET=0
+if [[ -n "${FILTER_MIN_QSCORE+x}" ]]; then
+  FILTER_MIN_QSCORE_ENV_SET=1
+fi
+
 if [[ -f "${DEFAULT_CONFIG_FILE}" ]]; then
   # shellcheck disable=SC1090
   source "${DEFAULT_CONFIG_FILE}"
@@ -15,6 +27,13 @@ fi
 if [[ -f "${LOCAL_CONFIG_FILE}" ]]; then
   # shellcheck disable=SC1090
   source "${LOCAL_CONFIG_FILE}"
+fi
+
+if [[ ${FILTER_MIN_INTENSITY_ENV_SET} -eq 1 ]]; then
+  FILTER_MIN_INTENSITY="${FILTER_MIN_INTENSITY_ENV_OVERRIDE}"
+fi
+if [[ ${FILTER_MIN_QSCORE_ENV_SET} -eq 1 ]]; then
+  FILTER_MIN_QSCORE="${FILTER_MIN_QSCORE_ENV_OVERRIDE}"
 fi
 
 FLASHDECONV_INI=${FLASHDECONV_INI:-"${ROOT_DIR}/config/flashdeconv.ini"}
@@ -204,6 +223,7 @@ process_sample() {
   fi
 
   if [[ ${RUN_FILTER} -eq 1 ]]; then
+    log "Filtering ${sample_id} with ppm=${FILTER_PPM}, rt_window=${FILTER_RT_MINUTES}, min_intensity=${FILTER_MIN_INTENSITY}, min_qscore=${FILTER_MIN_QSCORE:-0}"
     if ! run_or_echo Rscript "${ROOT_DIR}/scripts/filter_neutral_masses.R" \
       --input "${normalized_tsv}" \
       --output "${filtered_tsv}" \

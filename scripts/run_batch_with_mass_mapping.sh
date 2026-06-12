@@ -11,6 +11,8 @@ PROTEIN_FASTA=""
 RUN_FILTER=0
 DRY_RUN=0
 CONTINUE_ON_ERROR=${CONTINUE_ON_ERROR:-1}
+FILTER_MIN_INTENSITY_OVERRIDE=""
+FILTER_MIN_QSCORE_OVERRIDE=""
 
 MATCH_TOP_FEATURES=${MATCH_TOP_FEATURES:-10}
 MATCH_TOP_PROTEINS=${MATCH_TOP_PROTEINS:-5}
@@ -27,6 +29,8 @@ Usage:
     --output <output-directory> \
     --protein-fasta <proteins.fasta> \
     [--filter] \
+    [--filter-min-intensity 0] \
+    [--filter-qscore 0.5] \
     [--dry-run] \
     [--continue-on-error 0|1] \
     [--top-features 10] \
@@ -44,6 +48,12 @@ Description:
 Outputs:
   <output>/tables/protein_masses.tsv
   <output>/tables/<sample>_protein_matches.tsv
+
+Notes:
+  --filter-min-intensity overrides FILTER_MIN_INTENSITY for pipeline.sh
+  and is only applied when --filter is enabled.
+  --filter-qscore overrides FILTER_MIN_QSCORE for pipeline.sh and is
+  only applied when --filter is enabled.
 EOF
 }
 
@@ -54,6 +64,10 @@ log() {
 fail() {
   printf 'Error: %s\n' "$*" >&2
   exit 1
+}
+
+is_number() {
+  [[ "$1" =~ ^[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?$ ]]
 }
 
 run_or_echo() {
@@ -83,6 +97,14 @@ while [[ $# -gt 0 ]]; do
     --filter)
       RUN_FILTER=1
       shift
+      ;;
+    --filter-min-intensity)
+      FILTER_MIN_INTENSITY_OVERRIDE=${2:-}
+      shift 2
+      ;;
+    --filter-qscore)
+      FILTER_MIN_QSCORE_OVERRIDE=${2:-}
+      shift 2
       ;;
     --dry-run)
       DRY_RUN=1
@@ -134,10 +156,26 @@ done
 [[ -f "${PROTEIN_FASTA}" ]] || fail "Protein FASTA not found: ${PROTEIN_FASTA}"
 [[ "${CONTINUE_ON_ERROR}" =~ ^[01]$ ]] || fail "--continue-on-error must be 0 or 1"
 [[ "${MATCH_SKIP_NONCANON}" =~ ^[01]$ ]] || fail "--skip-noncanon must be 0 or 1"
+if [[ -n "${FILTER_MIN_INTENSITY_OVERRIDE}" ]]; then
+  is_number "${FILTER_MIN_INTENSITY_OVERRIDE}" || fail "--filter-min-intensity must be numeric"
+fi
+if [[ -n "${FILTER_MIN_QSCORE_OVERRIDE}" ]]; then
+  is_number "${FILTER_MIN_QSCORE_OVERRIDE}" || fail "--filter-qscore must be numeric"
+fi
 
 mkdir -p "${OUTPUT_DIR}/tables"
 
 pipeline_cmd=("${ROOT_DIR}/pipeline.sh" --input "${INPUT_PATH}" --output "${OUTPUT_DIR}" --batch)
+if [[ -n "${FILTER_MIN_INTENSITY_OVERRIDE}" || -n "${FILTER_MIN_QSCORE_OVERRIDE}" ]]; then
+  env_cmd=(env)
+  if [[ -n "${FILTER_MIN_INTENSITY_OVERRIDE}" ]]; then
+    env_cmd+=("FILTER_MIN_INTENSITY=${FILTER_MIN_INTENSITY_OVERRIDE}")
+  fi
+  if [[ -n "${FILTER_MIN_QSCORE_OVERRIDE}" ]]; then
+    env_cmd+=("FILTER_MIN_QSCORE=${FILTER_MIN_QSCORE_OVERRIDE}")
+  fi
+  pipeline_cmd=("${env_cmd[@]}" "${ROOT_DIR}/pipeline.sh" --input "${INPUT_PATH}" --output "${OUTPUT_DIR}" --batch)
+fi
 if [[ ${RUN_FILTER} -eq 1 ]]; then
   pipeline_cmd+=(--filter)
 fi

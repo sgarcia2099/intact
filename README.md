@@ -2,6 +2,11 @@
 
 This repository is a bash-first, Docker-based workflow for intact protein MS1 deconvolution and downstream mass annotation.
 
+Recommended usage pattern:
+
+1. Use [pipeline.sh](pipeline.sh) once to validate environment/container setup and single-sample behavior.
+2. Use [scripts/run_batch_with_mass_mapping.sh](scripts/run_batch_with_mass_mapping.sh) as the main rerun script for routine batch FLASHDeconv reruns plus downstream mass mapping.
+
 ## Overview
 
 The current implementation supports:
@@ -12,7 +17,9 @@ The current implementation supports:
 4. Optional R-based filtering (mass/RT deduplication, intensity threshold, and QScore threshold)
 5. Optional post-processing to map top features to candidate proteins from a FASTA-derived mass table
 
-Primary entry point: [pipeline.sh](pipeline.sh)
+Bootstrap entry point: [pipeline.sh](pipeline.sh)
+
+Primary rerun entry point: [scripts/run_batch_with_mass_mapping.sh](scripts/run_batch_with_mass_mapping.sh)
 
 Because deconvolution is MS1-based, the workflow applies to both DIA and DDA acquisitions.
 
@@ -63,7 +70,7 @@ Copy local config override:
 cp config/pipeline.env.example config/pipeline.env
 ```
 
-Single sample:
+Initial validation run (one-time bootstrap):
 
 ```bash
 ./pipeline.sh \
@@ -72,7 +79,17 @@ Single sample:
   --sample run01
 ```
 
-Batch mode:
+Then use the main rerun script for routine batch processing and mapping:
+
+```bash
+./scripts/run_batch_with_mass_mapping.sh \
+  --input /data/raw \
+  --output /data/results \
+  --protein-fasta /data/proteins.fasta \
+  --filter
+```
+
+Underlying pipeline-only batch mode (optional):
 
 ```bash
 ./pipeline.sh \
@@ -81,7 +98,7 @@ Batch mode:
   --batch
 ```
 
-Batch with filtering:
+Pipeline-only batch with filtering (optional):
 
 ```bash
 ./pipeline.sh \
@@ -151,7 +168,7 @@ Defaults (from [config/pipeline.env.example](config/pipeline.env.example)):
 - FILTER_PPM=10
 - FILTER_RT_MINUTES=0.5
 - FILTER_MIN_INTENSITY=0
-- FILTER_MIN_QSCORE=0
+- FILTER_MIN_QSCORE=0.5
 
 Recommended quality threshold guidance:
 
@@ -238,6 +255,27 @@ To process multiple RAW files and immediately continue into protein mass predict
   --protein-fasta /data/proteins.fasta \
   --filter
 ```
+
+This is the recommended script for repeated reruns after initial setup validation.
+
+Filter overrides at runtime:
+
+```bash
+./scripts/run_batch_with_mass_mapping.sh \
+  --input /data/raw \
+  --output /data/results \
+  --protein-fasta /data/proteins.fasta \
+  --filter \
+  --filter-min-intensity 1000000 \
+  --filter-qscore 0.7
+```
+
+Batch-script filtering and matching flags:
+
+- `--filter`: runs R filtering before matching.
+- `--filter-min-intensity <value>`: overrides `FILTER_MIN_INTENSITY` for the filter stage.
+- `--filter-qscore <value>`: overrides `FILTER_MIN_QSCORE` for the filter stage.
+- `--min-intensity <value>`: matcher-stage minimum intensity for top-feature selection.
 
 This command runs:
 
