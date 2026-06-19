@@ -13,6 +13,10 @@ DRY_RUN=0
 CONTINUE_ON_ERROR=${CONTINUE_ON_ERROR:-1}
 FILTER_MIN_INTENSITY_OVERRIDE=""
 FILTER_MIN_QSCORE_OVERRIDE=""
+host_arch=$(uname -m)
+default_openms_image="garciasarah2099/intact-openms-flashdeconv:openms-3.5.0"
+OPENMS_IMAGE_OVERRIDE=${OPENMS_IMAGE:-"${default_openms_image}"}
+OPENMS_PLATFORM_OVERRIDE=${OPENMS_DOCKER_PLATFORM:-""}
 
 MATCH_TOP_FEATURES=${MATCH_TOP_FEATURES:-10}
 MATCH_TOP_PROTEINS=${MATCH_TOP_PROTEINS:-5}
@@ -31,6 +35,8 @@ Usage:
     [--filter] \
     [--filter-min-intensity 0] \
     [--filter-qscore 0.5] \
+    [--openms-image <docker-image>] \
+    [--openms-platform <platform>] \
     [--dry-run] \
     [--continue-on-error 0|1] \
     [--top-features 10] \
@@ -50,6 +56,10 @@ Outputs:
   <output>/tables/<sample>_protein_matches.tsv
 
 Notes:
+  --openms-image sets OPENMS_IMAGE for pipeline.sh. Default:
+  - garciasarah2099/intact-openms-flashdeconv:openms-3.5.0
+  --openms-platform sets OPENMS_DOCKER_PLATFORM for pipeline.sh.
+  For OpenMS 3.5.0 on amd64 hosts, use linux/arm64 (requires Docker emulation).
   --filter-min-intensity overrides FILTER_MIN_INTENSITY for pipeline.sh
   and is only applied when --filter is enabled.
   --filter-qscore overrides FILTER_MIN_QSCORE for pipeline.sh and is
@@ -80,6 +90,30 @@ run_or_echo() {
   fi
 }
 
+pull_image_or_fail() {
+  local image=$1
+  local platform=${2:-}
+
+  if [[ ${DRY_RUN} -eq 1 ]]; then
+    if [[ -n "${platform}" ]]; then
+      printf 'DRY_RUN: %q %q %q %q\n' docker pull --platform "${platform}" "${image}"
+    else
+      printf 'DRY_RUN: %q %q %q\n' docker pull "${image}"
+    fi
+    return 0
+  fi
+
+  if [[ -n "${platform}" ]]; then
+    if ! docker pull --platform "${platform}" "${image}"; then
+      fail "Unable to pull Docker image ${image} for platform ${platform}. Check that the tag exists and supports the requested platform."
+    fi
+  else
+    if ! docker pull "${image}"; then
+      fail "Unable to pull Docker image ${image}. Check that the tag exists and is public (or login if private)."
+    fi
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --input)
@@ -104,6 +138,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --filter-qscore)
       FILTER_MIN_QSCORE_OVERRIDE=${2:-}
+      shift 2
+      ;;
+    --openms-image)
+      OPENMS_IMAGE_OVERRIDE=${2:-}
+      shift 2
+      ;;
+    --openms-platform)
+      OPENMS_PLATFORM_OVERRIDE=${2:-}
       shift 2
       ;;
     --dry-run)
@@ -156,6 +198,12 @@ done
 [[ -f "${PROTEIN_FASTA}" ]] || fail "Protein FASTA not found: ${PROTEIN_FASTA}"
 [[ "${CONTINUE_ON_ERROR}" =~ ^[01]$ ]] || fail "--continue-on-error must be 0 or 1"
 [[ "${MATCH_SKIP_NONCANON}" =~ ^[01]$ ]] || fail "--skip-noncanon must be 0 or 1"
+[[ -n "${OPENMS_IMAGE_OVERRIDE}" ]] || fail "--openms-image cannot be empty"
+if [[ "${OPENMS_PLATFORM_OVERRIDE}" == "linux/amd64" || "${OPENMS_PLATFORM_OVERRIDE}" == "linux/arm64" ]]; then
+  :
+elif [[ -n "${OPENMS_PLATFORM_OVERRIDE}" ]]; then
+  fail "--openms-platform must be linux/amd64, linux/arm64, or empty"
+fi
 if [[ -n "${FILTER_MIN_INTENSITY_OVERRIDE}" ]]; then
   is_number "${FILTER_MIN_INTENSITY_OVERRIDE}" || fail "--filter-min-intensity must be numeric"
 fi
@@ -165,17 +213,32 @@ fi
 
 mkdir -p "${OUTPUT_DIR}/tables"
 
-pipeline_cmd=("${ROOT_DIR}/pipeline.sh" --input "${INPUT_PATH}" --output "${OUTPUT_DIR}" --batch)
-if [[ -n "${FILTER_MIN_INTENSITY_OVERRIDE}" || -n "${FILTER_MIN_QSCORE_OVERRIDE}" ]]; then
-  env_cmd=(env)
-  if [[ -n "${FILTER_MIN_INTENSITY_OVERRIDE}" ]]; then
-    env_cmd+=("FILTER_MIN_INTENSITY=${FILTER_MIN_INTENSITY_OVERRIDE}")
-  fi
-  if [[ -n "${FILTER_MIN_QSCORE_OVERRIDE}" ]]; then
-    env_cmd+=("FILTER_MIN_QSCORE=${FILTER_MIN_QSCORE_OVERRIDE}")
-  fi
-  pipeline_cmd=("${env_cmd[@]}" "${ROOT_DIR}/pipeline.sh" --input "${INPUT_PATH}" --output "${OUTPUT_DIR}" --batch)
+if [[ -z "${OPENMS_PLATFORM_OVERRIDE}" && "${host_arch}" == "x86_64" && "${OPENMS_IMAGE_OVERRIDE}" == *":openms-3.5.0" ]]; then
+  OPENMS_PLATFORM_OVERRIDE="linux/arm64"
 fi
+
+log "Using OPENMS_IMAGE=${OPENMS_IMAGE_OVERRIDE}"
+if [[ -n "${OPENMS_PLATFORM_OVERRIDE}" ]]; then
+  log "Using OPENMS_DOCKER_PLATFORM=${OPENMS_PLATFORM_OVERRIDE}"
+fi
+if [[ "${host_arch}" == "x86_64" && "${OPENMS_IMAGE_OVERRIDE}" == *":openms-3.5.0" && "${OPENMS_PLATFORM_OVERRIDE}" == "linux/arm64" ]]; then
+  log "Info: running arm64 OpenMS 3.5.0 image on amd64 host via Docker emulation"
+fi
+
+log "Validating OpenMS Docker image availability"
+pull_image_or_fail "${OPENMS_IMAGE_OVERRIDE}" "${OPENMS_PLATFORM_OVERRIDE}"
+
+env_cmd=(env "OPENMS_IMAGE=${OPENMS_IMAGE_OVERRIDE}")
+if [[ -n "${OPENMS_PLATFORM_OVERRIDE}" ]]; then
+  env_cmd+=("OPENMS_DOCKER_PLATFORM=${OPENMS_PLATFORM_OVERRIDE}")
+fi
+if [[ -n "${FILTER_MIN_INTENSITY_OVERRIDE}" ]]; then
+  env_cmd+=("FILTER_MIN_INTENSITY=${FILTER_MIN_INTENSITY_OVERRIDE}")
+fi
+if [[ -n "${FILTER_MIN_QSCORE_OVERRIDE}" ]]; then
+  env_cmd+=("FILTER_MIN_QSCORE=${FILTER_MIN_QSCORE_OVERRIDE}")
+fi
+pipeline_cmd=("${env_cmd[@]}" "${ROOT_DIR}/pipeline.sh" --input "${INPUT_PATH}" --output "${OUTPUT_DIR}" --batch)
 if [[ ${RUN_FILTER} -eq 1 ]]; then
   pipeline_cmd+=(--filter)
 fi

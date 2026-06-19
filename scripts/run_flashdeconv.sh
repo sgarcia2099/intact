@@ -60,6 +60,19 @@ ROOT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 DEFAULT_CONFIG_FILE="${ROOT_DIR}/config/pipeline.env.example"
 LOCAL_CONFIG_FILE="${ROOT_DIR}/config/pipeline.env"
 
+# Preserve explicit runtime overrides so config files do not clobber them.
+OPENMS_IMAGE_ENV_OVERRIDE="${OPENMS_IMAGE-}"
+OPENMS_IMAGE_ENV_SET=0
+if [[ -n "${OPENMS_IMAGE+x}" ]]; then
+  OPENMS_IMAGE_ENV_SET=1
+fi
+
+OPENMS_DOCKER_PLATFORM_ENV_OVERRIDE="${OPENMS_DOCKER_PLATFORM-}"
+OPENMS_DOCKER_PLATFORM_ENV_SET=0
+if [[ -n "${OPENMS_DOCKER_PLATFORM+x}" ]]; then
+  OPENMS_DOCKER_PLATFORM_ENV_SET=1
+fi
+
 if [[ -f "${DEFAULT_CONFIG_FILE}" ]]; then
   # shellcheck disable=SC1090
   source "${DEFAULT_CONFIG_FILE}"
@@ -70,7 +83,15 @@ if [[ -f "${LOCAL_CONFIG_FILE}" ]]; then
   source "${LOCAL_CONFIG_FILE}"
 fi
 
+if [[ ${OPENMS_IMAGE_ENV_SET} -eq 1 ]]; then
+  OPENMS_IMAGE="${OPENMS_IMAGE_ENV_OVERRIDE}"
+fi
+if [[ ${OPENMS_DOCKER_PLATFORM_ENV_SET} -eq 1 ]]; then
+  OPENMS_DOCKER_PLATFORM="${OPENMS_DOCKER_PLATFORM_ENV_OVERRIDE}"
+fi
+
 FLASHDECONV_INI=${FLASHDECONV_INI:-"${ROOT_DIR}/config/flashdeconv.ini"}
+OPENMS_DOCKER_PLATFORM=${OPENMS_DOCKER_PLATFORM:-""}
 
 [[ -f "${FLASHDECONV_INI}" ]] || fail "FLASHDeconv INI not found: ${FLASHDECONV_INI}"
 
@@ -84,18 +105,44 @@ spec_ms1_name=$(basename "${SPEC_MS1_FILE}")
 ini_dir=$(cd "$(dirname "${FLASHDECONV_INI}")" && pwd)
 ini_name=$(basename "${FLASHDECONV_INI}")
 
-docker run --rm \
-  -v "${input_dir}:/input" \
-  -v "${output_dir}:/output" \
-  -v "${ini_dir}:/config" \
-  -u "$(id -u):$(id -g)" \
-  "${OPENMS_IMAGE}" \
-  /opt/OpenMS/bin/FLASHDeconv \
-  -in "/input/${input_name}" \
-  -out "/output/${features_name}" \
-  -out_spec1 "/output/${spec_ms1_name}" \
-  -ini "/config/${ini_name}" \
-  -threads "${FLASHDECONV_THREADS}" \
-  >"${LOG_FILE}" 2>&1
+docker_cmd=(
+  docker run --rm
+  -v "${input_dir}:/input"
+  -v "${output_dir}:/output"
+  -v "${ini_dir}:/config"
+  -u "$(id -u):$(id -g)"
+)
+
+if [[ -n "${OPENMS_DOCKER_PLATFORM}" ]]; then
+  docker_cmd+=(--platform "${OPENMS_DOCKER_PLATFORM}")
+fi
+
+docker_cmd_args=(
+  -in "/input/${input_name}"
+  -out "/output/${features_name}"
+  -out_spec1 "/output/${spec_ms1_name}"
+  -ini "/config/${ini_name}"
+  -threads "${FLASHDECONV_THREADS}"
+)
+
+docker_cmd_explicit=(
+  "${docker_cmd[@]}"
+  "${OPENMS_IMAGE}"
+  /opt/OpenMS/bin/FLASHDeconv
+  "${docker_cmd_args[@]}"
+)
+
+if ! "${docker_cmd_explicit[@]}" >"${LOG_FILE}" 2>&1; then
+  # Some custom images set ENTRYPOINT to FLASHDeconv. In that case,
+  # passing /opt/OpenMS/bin/FLASHDeconv again causes a trailing-argument error.
+  if grep -q "Trailing text argument(s) '\[/opt/OpenMS/bin/FLASHDeconv\]' given" "${LOG_FILE}"; then
+    docker_cmd_entrypoint=(
+      "${docker_cmd[@]}"
+      "${OPENMS_IMAGE}"
+      "${docker_cmd_args[@]}"
+    )
+    "${docker_cmd_entrypoint[@]}" >"${LOG_FILE}" 2>&1 || true
+  fi
+fi
 
 [[ -f "${FEATURES_FILE}" ]] || fail "Expected FLASHDeconv feature output was not created: ${FEATURES_FILE}"

@@ -1,0 +1,118 @@
+name: Build OpenMS Stable Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      openms_version:
+        description: OpenMS stable version (e.g. 3.5.0)
+        required: true
+        default: 3.4.1
+      build_mode:
+        description: Build mode (prebuilt or source-amd64)
+        required: true
+        default: prebuilt
+        type: choice
+        options:
+          - prebuilt
+          - source-amd64
+      image_name:
+        description: Docker Hub image name (without user), e.g. intact-openms-flashdeconv
+        required: true
+        default: intact-openms-flashdeconv
+      tag_stable:
+        description: Also tag image as stable
+        required: true
+        default: false
+        type: boolean
+      push:
+        description: Push to Docker Hub
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DOCKERHUB_USER: ${{ vars.DOCKERHUB_USERNAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Hub config
+        if: inputs.push == true
+        run: |
+          test -n "${DOCKERHUB_USER}" || (echo "Missing repo variable DOCKERHUB_USERNAME" && exit 1)
+          test -n "${{ secrets.DOCKERHUB_TOKEN }}" || (echo "Missing secret DOCKERHUB_TOKEN" && exit 1)
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: inputs.push == true
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and optionally push
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version='${{ inputs.openms_version }}'
+          build_mode='${{ inputs.build_mode }}'
+          major_minor=$(echo "$version" | awk -F'.' '{print $1 "." $2}')
+          repo="${DOCKERHUB_USER}/${{ inputs.image_name }}"
+          dockerfile='docker/openms-stable/Dockerfile'
+          platform='linux/amd64'
+          base_image_arg="--build-arg OPENMS_BASE_IMAGE=ghcr.io/openms/openms-executables:${version}"
+          tag_suffix=''
+
+          if [[ "${build_mode}" == 'source-amd64' ]]; then
+            dockerfile='docker/openms-stable/Dockerfile.source-amd64'
+            platform='linux/amd64'
+            base_image_arg=''
+            tag_suffix='-amd64'
+          fi
+
+          tags=(
+            -t "${repo}:openms-${version}${tag_suffix}"
+            -t "${repo}:openms-${major_minor}${tag_suffix}"
+          )
+
+          if [[ '${{ inputs.tag_stable }}' == 'true' ]]; then
+            tags+=( -t "${repo}:stable" )
+          fi
+
+          push_arg='--load'
+          if [[ '${{ inputs.push }}' == 'true' ]]; then
+            push_arg='--push'
+          fi
+
+          docker buildx build \
+            --platform "${platform}" \
+            --build-arg "OPENMS_VERSION=${version}" \
+            --build-arg "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --build-arg "VCS_REF=${GITHUB_SHA}" \
+            ${base_image_arg} \
+            "${tags[@]}" \
+            -f "${dockerfile}" \
+            ${push_arg} \
+            .
+
+          if [[ '${{ inputs.push }}' != 'true' ]]; then
+            docker run --rm "${repo}:openms-${version}${tag_suffix}" --help | head -n 30
+          fi
+
+      - name: Summary
+        run: |
+          echo "Built image for OpenMS version: ${{ inputs.openms_version }}"
+          if [[ '${{ inputs.push }}' == 'true' ]]; then
+            echo "Pushed to Docker Hub user: ${DOCKERHUB_USER}"
+          else
+            echo "Push disabled; local build only"
+          fi

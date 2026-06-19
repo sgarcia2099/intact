@@ -2,6 +2,12 @@
 
 This repository is a bash-first, Docker-based workflow for intact protein MS1 deconvolution and downstream mass annotation.
 
+OpenMS/FLASHDeconv runtime now uses our custom Docker Hub image by default:
+`garciasarah2099/intact-openms-flashdeconv:openms-3.5.0`.
+
+If you need OpenMS 3.5.0 on an amd64 host, run the arm64 image with Docker
+platform emulation (`OPENMS_DOCKER_PLATFORM=linux/arm64`).
+
 Recommended usage pattern:
 
 1. Use [pipeline.sh](pipeline.sh) once to validate environment/container setup and single-sample behavior.
@@ -89,6 +95,20 @@ Then use the main rerun script for routine batch processing and mapping:
   --filter
 ```
 
+Native-speed amd64 OpenMS 3.5 build-from-source example:
+
+```bash
+docker login
+docker/openms-stable/build.sh \
+  --repo <dockerhub-user>/intact-openms-flashdeconv \
+  --openms-version 3.5.0 \
+  --build-mode source-amd64 \
+  --openms-ref release/3.5.0 \
+  --push
+```
+
+This publishes an amd64-native tag, for example:
+`<dockerhub-user>/intact-openms-flashdeconv:openms-3.5.0-amd64`
 Underlying pipeline-only batch mode (optional):
 
 ```bash
@@ -275,6 +295,8 @@ Batch-script filtering and matching flags:
 - `--filter`: runs R filtering before matching.
 - `--filter-min-intensity <value>`: overrides `FILTER_MIN_INTENSITY` for the filter stage.
 - `--filter-qscore <value>`: overrides `FILTER_MIN_QSCORE` for the filter stage.
+- `--openms-image <docker-image>`: overrides `OPENMS_IMAGE` used by deconvolution.
+- `--openms-platform <platform>`: overrides `OPENMS_DOCKER_PLATFORM` (`linux/amd64` or `linux/arm64`).
 - `--min-intensity <value>`: matcher-stage minimum intensity for top-feature selection.
 
 This command runs:
@@ -306,6 +328,62 @@ Algorithmic deconvolution constraints remain in [config/flashdeconv.ini](config/
 - SD min_snr=1.0
 - mass and charge ranges
 
+### Build And Use A Pinned Stable OpenMS Image
+
+This repository includes a starter Docker setup to publish your own pinned
+OpenMS/FLASHDeconv image to Docker Hub:
+
+- Dockerfile: [docker/openms-stable/Dockerfile](docker/openms-stable/Dockerfile)
+- Local build helper: [docker/openms-stable/build.sh](docker/openms-stable/build.sh)
+- CI workflow: [.github/workflows/build-openms-image.yml](.github/workflows/build-openms-image.yml)
+
+Local build example (no push):
+
+```bash
+chmod +x docker/openms-stable/build.sh
+docker/openms-stable/build.sh \
+  --repo <dockerhub-user>/intact-openms-flashdeconv \
+  --openms-version 3.5.0 \
+  --platform linux/arm64
+```
+
+Build and push example:
+
+```bash
+docker login
+docker/openms-stable/build.sh \
+  --repo <dockerhub-user>/intact-openms-flashdeconv \
+  --openms-version 3.5.0 \
+  --platform linux/arm64 \
+  --push \
+  --tag-stable
+```
+
+The pipeline defaults are already set to our published image. To override,
+point the pipeline to another pinned image in
+`config/pipeline.env`:
+
+```bash
+OPENMS_IMAGE="garciasarah2099/intact-openms-flashdeconv:openms-3.5.0"
+# amd64 host + OpenMS 3.5.0 (arm64 image) via emulation:
+# OPENMS_DOCKER_PLATFORM="linux/arm64"
+# preferred amd64-native (if built/published with --build-mode source-amd64):
+# OPENMS_IMAGE="garciasarah2099/intact-openms-flashdeconv:openms-3.5.0-amd64"
+# OPENMS_DOCKER_PLATFORM=""
+```
+
+One-command example to force OpenMS 3.5.0 from batch script on amd64:
+
+```bash
+./scripts/run_batch_with_mass_mapping.sh \
+  --input /data/raw \
+  --output /data/results \
+  --protein-fasta /data/proteins.fasta \
+  --filter \
+  --openms-image garciasarah2099/intact-openms-flashdeconv:openms-3.5.0 \
+  --openms-platform linux/arm64
+```
+
 ## Validation
 
 Basic checks:
@@ -321,8 +399,8 @@ Container smoke tests:
 
 ```bash
 docker run --rm --security-opt seccomp=unconfined proteowizard/pwiz-skyline-i-agree-to-the-vendor-licenses:latest wine msconvert --help
-docker run --rm ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDeconv --help
-docker run --rm -v "$PWD/config:/config" ghcr.io/openms/openms-executables:latest /opt/OpenMS/bin/FLASHDeconv -write_ini /config/generated.ini
+docker run --rm --platform linux/arm64 garciasarah2099/intact-openms-flashdeconv:openms-3.5.0 --help
+docker run --rm --platform linux/arm64 -v "$PWD/config:/config" garciasarah2099/intact-openms-flashdeconv:openms-3.5.0 -write_ini /config/generated.ini
 ```
 
 ## Citations And Tool Links

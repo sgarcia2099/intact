@@ -1,0 +1,107 @@
+ARG OPENMS_VERSION=3.5.0
+ARG OPENMS_REF=release/3.5.0
+
+FROM ubuntu:22.04 AS build
+
+ARG OPENMS_VERSION
+ARG OPENMS_REF
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    python3-pip \
+    pkg-config \
+    libboost-all-dev \
+    libxerces-c-dev \
+    libeigen3-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libsqlite3-dev \
+    libsvm-dev \
+    libomp-dev \
+    libhdf5-dev \
+    libgsl-dev \
+    coinor-libcoinmp-dev \
+    qt6-base-dev \
+    qt6-base-dev-tools \
+    libqt6opengl6-dev \
+    libqt6svg6-dev \
+    qtbase5-dev \
+    libqt5svg5-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ubuntu's Boost dev packages include static archives that are not PIC-safe for
+# linking into shared objects in this OpenMS build; keep shared Boost only.
+RUN find /usr/lib/x86_64-linux-gnu -maxdepth 1 -type f -name 'libboost_*.a' -delete
+
+# OpenMS 3.5 requires CMake >= 3.24. Ubuntu 22.04 provides 3.22, so install
+# a newer CMake in the build image via pip without changing runtime base.
+RUN python3 -m pip install --no-cache-dir "cmake>=3.27"
+
+WORKDIR /src
+
+# OpenMS refs are typically branches like release/<version>
+# (for example release/3.5.0). This can be overridden via OPENMS_REF.
+RUN git clone --depth 1 --branch "${OPENMS_REF}" https://github.com/OpenMS/OpenMS.git
+
+WORKDIR /src/OpenMS
+
+RUN cmake -S . -B build -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/opt/OpenMS \
+    -DENABLE_GUI=OFF \
+    -DBOOST_USE_STATIC=OFF \
+    -DBoost_USE_STATIC_LIBS=OFF \
+    -DBoost_USE_STATIC_RUNTIME=OFF \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DOPENMS_CONTRIB_LIBS=ON
+
+RUN cmake --build build --target FLASHDeconv -- -j"$(nproc)"
+RUN cmake --install build
+
+FROM ubuntu:22.04 AS runtime
+
+ARG OPENMS_VERSION
+ARG BUILD_DATE
+ARG VCS_REF
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libboost-filesystem1.74.0 \
+    libboost-iostreams1.74.0 \
+    libboost-regex1.74.0 \
+    libboost-serialization1.74.0 \
+    libboost-thread1.74.0 \
+    libboost-system1.74.0 \
+    libboost-program-options1.74.0 \
+    libxerces-c3.2 \
+    libgomp1 \
+    zlib1g \
+    libbz2-1.0 \
+    libsqlite3-0 \
+    libhdf5-103-1 \
+    libgsl27 \
+    coinor-libcoinutils3v5 \
+    coinor-libosi1v5 \
+    coinor-libclp1 \
+    coinor-libcgl1 \
+    coinor-libcbc3 \
+    coinor-libcoinmp1v5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /opt/OpenMS /opt/OpenMS
+
+LABEL org.opencontainers.image.title="OpenMS FLASHDeconv (3.5 amd64 source build)" \
+      org.opencontainers.image.description="Native amd64 OpenMS/FLASHDeconv built from source" \
+      org.opencontainers.image.version="${OPENMS_VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.source="https://github.com/openms/OpenMS"
+
+ENTRYPOINT ["/opt/OpenMS/bin/FLASHDeconv"]
+CMD ["--help"]
