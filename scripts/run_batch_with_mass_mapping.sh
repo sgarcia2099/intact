@@ -15,6 +15,39 @@ FILTER_MIN_INTENSITY_OVERRIDE=""
 FILTER_MIN_QSCORE_OVERRIDE=""
 host_arch=$(uname -m)
 default_openms_image="garciasarah2099/intact-openms-flashdeconv:openms-3.5.0"
+DEFAULT_CONFIG_FILE="${ROOT_DIR}/config/pipeline.env.example"
+LOCAL_CONFIG_FILE="${ROOT_DIR}/config/pipeline.env"
+
+# Preserve explicit runtime overrides so config files do not clobber them.
+OPENMS_IMAGE_ENV_OVERRIDE="${OPENMS_IMAGE-}"
+OPENMS_IMAGE_ENV_SET=0
+if [[ -n "${OPENMS_IMAGE+x}" ]]; then
+  OPENMS_IMAGE_ENV_SET=1
+fi
+
+OPENMS_DOCKER_PLATFORM_ENV_OVERRIDE="${OPENMS_DOCKER_PLATFORM-}"
+OPENMS_DOCKER_PLATFORM_ENV_SET=0
+if [[ -n "${OPENMS_DOCKER_PLATFORM+x}" ]]; then
+  OPENMS_DOCKER_PLATFORM_ENV_SET=1
+fi
+
+if [[ -f "${DEFAULT_CONFIG_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${DEFAULT_CONFIG_FILE}"
+fi
+
+if [[ -f "${LOCAL_CONFIG_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${LOCAL_CONFIG_FILE}"
+fi
+
+if [[ ${OPENMS_IMAGE_ENV_SET} -eq 1 ]]; then
+  OPENMS_IMAGE="${OPENMS_IMAGE_ENV_OVERRIDE}"
+fi
+if [[ ${OPENMS_DOCKER_PLATFORM_ENV_SET} -eq 1 ]]; then
+  OPENMS_DOCKER_PLATFORM="${OPENMS_DOCKER_PLATFORM_ENV_OVERRIDE}"
+fi
+
 OPENMS_IMAGE_OVERRIDE=${OPENMS_IMAGE:-"${default_openms_image}"}
 OPENMS_PLATFORM_OVERRIDE=${OPENMS_DOCKER_PLATFORM:-""}
 
@@ -100,6 +133,11 @@ pull_image_or_fail() {
     else
       printf 'DRY_RUN: %q %q %q\n' docker pull "${image}"
     fi
+    return 0
+  fi
+
+  if docker image inspect "${image}" >/dev/null 2>&1; then
+    log "Using local Docker image ${image}"
     return 0
   fi
 
