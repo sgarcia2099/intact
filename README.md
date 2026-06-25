@@ -322,10 +322,15 @@ Key controls in [config/pipeline.env.example](config/pipeline.env.example):
 - KEEP_INTERMEDIATE
 - CONTINUE_ON_ERROR
 
+For PIP-style intact protein standard runs, the default conversion preserves
+profile spectra (`MSCONVERT_PEAK_PICKING=none`), matching the FLASHDeconv paper's
+RAW-to-mzML setup without peak picking or filtration. Set
+`MSCONVERT_PEAK_PICKING=vendor` only for intentionally centroided inputs.
+
 Algorithmic deconvolution constraints remain in [config/flashdeconv.ini](config/flashdeconv.ini), including:
 
 - SD min_cos=0.85
-- SD min_snr=1.0
+- SD min_snr=0.25
 - mass and charge ranges
 
 ### Build And Use A Pinned Stable OpenMS Image

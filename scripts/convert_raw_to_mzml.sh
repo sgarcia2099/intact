@@ -76,7 +76,14 @@ base_name=${output_name%.mzML}
 host_uid=$(id -u)
 host_gid=$(id -g)
 
-peak_filter="peakPicking ${MSCONVERT_PEAK_PICKING:-vendor} msLevel=1-"
+peak_filter_args=()
+case "${MSCONVERT_PEAK_PICKING:-none}" in
+  none|off|false|0|"")
+    ;;
+  *)
+    peak_filter_args=(--filter "peakPicking ${MSCONVERT_PEAK_PICKING} msLevel=1-")
+    ;;
+esac
 
 compression_flag=()
 if [[ "${MSCONVERT_COMPRESSION:-zlib}" == "zlib" ]]; then
@@ -116,7 +123,7 @@ docker run --rm \
       --outdir /output \
       ${encoding_flag[*]} \
       ${compression_flag[*]} \
-      --filter \"${peak_filter}\" \
+      ${peak_filter_args[*]} \
       ${extra_filter_args[*]} \
     && chown ${host_uid}:${host_gid} \"/output/${base_name}.mzML\"
   " \
